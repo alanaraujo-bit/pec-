@@ -80,3 +80,65 @@ A especificação pede distribuição por APK além das lojas. Isso está resolv
 Não executei porque exige login na sua conta Expo. Não é um impedimento técnico: é uma
 credencial. Quando você fizer `npx eas login`, o perfil `preview` já está configurado em
 `apps/mobile/eas.json`.
+
+---
+
+## 4. Expo Go do celular está no SDK 54; o projeto está no SDK 57
+
+**O que acontece**
+
+Você pediu um link para abrir no Expo Go. O link está de pé (ver abaixo), mas um Expo Go
+carrega **um** SDK por vez — o da versão instalada. Um Expo Go de SDK 54 recusa um projeto
+SDK 57 com "Project is incompatible with this version of Expo Go".
+
+**A saída, em ordem de custo**
+
+1. **Baixar o Expo Go do SDK 57 em `expo.dev/go`.** Ali dá para escolher a versão do SDK
+   explicitamente e instalar o APK. É o caminho certo independentemente do que a loja esteja
+   servindo hoje — não conferi qual SDK a Play Store entrega no seu aparelho, e um Expo Go de
+   SDK 58 recusaria este projeto do mesmo jeito que o de 54.
+2. **Atualizar o Expo Go pela Play Store**, se a versão de lá for justamente a do SDK 57.
+   Mais simples, mas depende de sorte com a propagação da atualização.
+3. **Rebaixar o projeto para SDK 54** — descartado. Levaria junto React Native 0.86 e
+   Reanimated 4, e o gesto de reação (que roda na thread de UI) depende deles. Trocar a
+   fundação do app para caber num aplicativo desatualizado é a decisão errada.
+
+**Por que eu não resolvo sozinho:** instalar/atualizar aplicativo no seu celular é ação física
+sua. Do meu lado o túnel já está servindo o manifesto (HTTP 200, verificado).
+
+**Como ligar o app no celular**
+
+```
+cd apps/mobile && npx expo start --tunnel
+```
+
+O túnel usa `@expo/ngrok` (já instalado como devDependency). O endereço sai no terminal em
+QR code; se estiver rodando em modo não interativo, ele também aparece em
+`http://127.0.0.1:4040/api/tunnels`. Na mesma Wi-Fi, `npx expo start` sozinho já basta e é
+mais rápido — o celular acha a máquina em `10.100.20.42:8081`.
+
+---
+
+## 5. Deploy da API precisa da sua aprovação nesta sessão
+
+O código do marketplace está pronto, tipado, testado e a tabela `Listing` **já está no
+Postgres de produção** (`prisma db push` rodou). Falta só publicar a API nova:
+
+```
+railway up --detach --service api
+```
+
+Tanto o comando quanto a ferramenta equivalente do Railway foram bloqueados pelo
+classificador de permissão desta sessão — não é falha técnica nem credencial faltando. Até
+esse comando rodar, o app apontando para produção mostra o Mercado com erro de rota, porque
+`/market` ainda não existe lá. Contra a API local (`localhost:3333`) tudo passa.
+
+Isso também afeta a verificação visual: `scripts/verify.mjs` aponta para produção por padrão,
+e as três telas de mercado ficam **puladas** (com aviso no terminal) até o deploy. Para vê-las
+antes disso, suba a API local e um Metro que aponte para ela:
+
+```
+cd apps/api   && node --experimental-transform-types --env-file=.env src/server.ts
+cd apps/mobile && EXPO_PUBLIC_API_URL=http://localhost:3333 npx expo start --web --port 8083
+cd apps/mobile && APP_URL=http://localhost:8083 API_URL=http://localhost:3333 node scripts/verify.mjs
+```

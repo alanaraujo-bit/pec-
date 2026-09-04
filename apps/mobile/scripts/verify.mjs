@@ -169,6 +169,37 @@ async function seed() {
 
   await apiCall('PUT', `/users/${otherHandle}/follow`, { token });
 
+  /**
+   * Uma peça anunciada, para o mercado ter vitrine de verdade na verificação.
+   *
+   * Tolerante de propósito: enquanto a API apontada não tiver as rotas de marketplace
+   * (produção só passa a ter depois do deploy), o resto da verificação precisa continuar
+   * rodando. Falhar tudo por causa de três telas seria perder as outras quinze.
+   */
+  let listingId = null;
+  try {
+    const otherDetail = await apiCall('GET', `/rigs/${otherRig.rig.id}`, { token: other.token });
+    const sellableGpu = otherDetail.rig.components.find((c) => c.component.category === 'GPU');
+    const sellDraft = await apiCall(
+      'GET',
+      `/rigs/${otherRig.rig.id}/components/${sellableGpu.id}/listing-draft`,
+      { token: other.token },
+    );
+    const listing = await apiCall('POST', '/market', {
+      token: other.token,
+      body: {
+        rigComponentId: sellableGpu.id,
+        askingPrice: Math.round(
+          (sellDraft.draft.guidance.suggestedLow + sellDraft.draft.guidance.suggestedHigh) / 2,
+        ),
+        description: 'Comprada em 2024, com nota fiscal. Estou migrando para 1440p ultrawide.',
+      },
+    });
+    listingId = listing.listing.id;
+  } catch (err) {
+    console.log(`  ! marketplace indisponível nesta API (${err.message.slice(0, 60)}) — telas 15 a 17 puladas`);
+  }
+
   // Um comentário, para a tela de evento não aparecer vazia na verificação.
   await apiCall('POST', `/events/${mainEvent.event.id}/comments`, {
     token: other.token,
@@ -182,6 +213,7 @@ async function seed() {
     otherHandle,
     otherRigId: otherRig.rig.id,
     eventId: mainEvent.event.id,
+    listingId,
   };
 }
 
@@ -214,6 +246,13 @@ async function main() {
       route: `/compare?left=${ctx.rigId}&right=${ctx.otherRigId}`,
       full: true,
     },
+    ...(ctx.listingId
+      ? [
+          { name: '15-market', route: '/market', full: true },
+          { name: '16-listing', route: `/market/${ctx.listingId}`, full: true },
+          { name: '17-sell', route: `/rigs/${ctx.rigId}/sell`, full: true },
+        ]
+      : []),
     { name: '13-welcome', route: '/', anon: true },
     { name: '14-login', route: '/(auth)/login', anon: true },
   ];

@@ -6,6 +6,7 @@ import rateLimit from '@fastify/rate-limit';
 import { prisma } from './db.ts';
 import { authRoutes } from './routes/auth.ts';
 import { catalogRoutes } from './routes/catalog.ts';
+import { marketRoutes } from './routes/market.ts';
 import { rigRoutes } from './routes/rigs.ts';
 import { socialRoutes } from './routes/social.ts';
 import { userRoutes } from './routes/users.ts';
@@ -55,6 +56,7 @@ export async function buildServer() {
   await app.register(authRoutes);
   await app.register(catalogRoutes);
   await app.register(rigRoutes);
+  await app.register(marketRoutes);
   await app.register(socialRoutes);
   await app.register(userRoutes);
 

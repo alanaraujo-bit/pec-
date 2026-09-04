@@ -44,13 +44,14 @@ Credenciais ficam no Railway e em `apps/api/.env` (fora do Git). Modelo em `.env
 **Deploy:** `railway up --detach --service api`
 **Migração e seed são manuais de propósito** — o container não roda `db push` no boot, porque
 o Railway reinicia containers sozinho e `--accept-data-loss` a cada reinício arriscaria dados
-de produção.
+de produção. Por isso, mexer no schema é sempre dois passos: `npx prisma db push` contra o
+proxy público **e depois** o deploy. A tabela `Listing` já foi ao banco de produção assim.
 
 ---
 
 ## 3. O que está pronto
 
-### `packages/core` — domínio (35 testes ✅)
+### `packages/core` — domínio (41 testes ✅)
 
 - **Modelo de FPS** calibrado contra pares CPU/GPU reais, com pontos de calibração travados
   por teste. Trata gargalo de CPU e de GPU de forma assimétrica (ver seção 6).
@@ -61,27 +62,36 @@ de produção.
   por compatibilidade e por ganho mínimo de 8%.
 - **Valuation** regional com curva de depreciação, sempre em faixa — nunca número exato.
 - **Comparação** contextual: o vencedor depende do perfil de quem pergunta.
+- **Marketplace** (`market/listing.ts`): rascunho de anúncio a partir de uma peça do PC,
+  leitura do preço pedido em quatro faixas explicadas e ciclo de vida do anúncio. Sem preço
+  de referência no catálogo, devolve `null` em vez de inventar valor.
 - **Catálogo:** 167 componentes com specs reais (35 CPUs, 35 GPUs, placas, memória,
   armazenamento, fontes, coolers, gabinetes, monitores, periféricos).
 
-### `apps/api` — Fastify + Prisma (70 verificações ponta a ponta ✅)
+### `apps/api` — Fastify + Prisma (104 verificações ponta a ponta ✅)
 
 Auth, catálogo guiado em 3 níveis, máquinas, inteligência, valor, histórico/evolução, feed,
-eventos, reações, comentários, perfil, rankings e comparação.
+eventos, reações, comentários, perfil, rankings, comparação e marketplace.
 
-### `apps/mobile` — Expo (15 telas, sem erro de console ✅)
+`recordSnapshot` e `loadRigContext` moram em `src/snapshots.ts`, não dentro de uma rota: hoje
+quatro caminhos diferentes mudam a máquina (adicionar, trocar, remover e vender peça), e se
+cada um gravasse seu próprio retrato, um deles acabaria gravando diferente.
+
+### `apps/mobile` — Expo (18 telas, sem erro de console ✅)
 
 Boas-vindas, login, cadastro, onboarding em 4 passos, Home com feed, Meus PCs, detalhe da
 máquina, diagnóstico, cadastro guiado de peça, evolução, rankings, perfil próprio e de
-terceiros, detalhe de evento com comentários, e comparação.
+terceiros, detalhe de evento com comentários, comparação, mercado, detalhe de anúncio e
+anúncio de peça.
 
 ---
 
 ## 4. Como verificar que está tudo de pé
 
 ```bash
-# Domínio
-cd packages/core && node --test src/engine/performance.test.ts src/engine/diagnosis.test.ts
+# Domínio — use o glob (npm test), não uma lista de arquivos: com lista, um teste novo
+# some da suíte sem ninguém perceber.
+cd packages/core && npm test
 
 # Gesto de reação
 cd apps/mobile && node --test src/components/reactionGesture.test.ts
@@ -98,17 +108,15 @@ cd apps/mobile && node scripts/verify.mjs # terminal 2
 
 ## 5. Próximos passos, em ordem de valor
 
-1. **Marketplace** — o schema e a valuation já suportam. Falta o anúncio a partir de uma peça
-   do setup (`suggestSellingPrice` já devolve a faixa recomendada) e a listagem.
-2. **PC Health como eixo próprio** — hoje temperatura/manutenção estão dentro do diagnóstico.
+1. **PC Health como eixo próprio** — hoje temperatura/manutenção estão dentro do diagnóstico.
    A especificação pede Performance ≠ Health ≠ Intelligence separados.
-3. **Notificações** — mudança relevante de preço, oportunidade de upgrade, atividade social.
-4. **Preços reais de mercado** — hoje a valuation parte do MSRP com depreciação modelada.
+2. **Notificações** — mudança relevante de preço, oportunidade de upgrade, atividade social.
+3. **Preços reais de mercado** — hoje a valuation parte do MSRP com depreciação modelada.
    Ingestão de preço real (novo e usado) tornaria a estimativa muito mais precisa.
-5. **Expandir o catálogo** — 167 peças cobrem o comum no Brasil. A ingestão é aditiva:
+4. **Expandir o catálogo** — 167 peças cobrem o comum no Brasil. A ingestão é aditiva:
    acrescentar uma peça é acrescentar uma linha, sem tocar no engine.
-6. **PC Companion (Windows)** — a arquitetura já está preparada; o domínio não depende do servidor.
-7. **Fechar iOS e APK** — depende de credenciais suas, ver BLOCKERS.md.
+5. **PC Companion (Windows)** — a arquitetura já está preparada; o domínio não depende do servidor.
+6. **Fechar iOS e APK** — depende de credenciais suas, ver BLOCKERS.md.
 
 ---
 
@@ -127,6 +135,18 @@ PC caro e desequilibrado` guarda essa promessa.
 
 **Não deixe o app recalcular domínio.** A API devolve tudo pronto pelo core. Já corrigi um
 caso em que o perfil deduzia o veredito pelo score — a tela passou a discordar do engine.
+No marketplace isso apareceu de novo: a tela de anunciar precisa reagir enquanto a pessoa
+digita o preço. A saída **não** foi reimplementar a regra no app — foi `priceBands()`, que
+manda as faixas com rótulo e explicação prontos, e um teste percorre 3.000 preços conferindo
+que a faixa mostrada é a mesma que o servidor aplica ao salvar.
+
+**Não deixe o marketplace ter preço próprio.** A faixa do anúncio é a da valuation, e o
+engine avalia o preço sem nunca proibi-lo — `assessAskingPrice` devolve leitura, não permissão.
+`listing.test.ts` compara diagnóstico e Setup Score antes e depois de anunciar todas as peças
+do PC: se a monetização começar a mexer na verdade técnica, ele quebra primeiro.
+
+**Anúncio nunca publica sozinho.** `publishEvent` chega `false` por padrão nas rotas de criar
+e de vender. Vender marca `removedAt` na peça, como a troca — nunca DELETE.
 
 **`Loading` dentro de ScrollView precisa de `minHeight`.** `flex: 1` colapsa para altura zero
 e a tela parece travada em branco. Já corrigido no componente compartilhado.

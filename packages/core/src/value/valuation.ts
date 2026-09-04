@@ -205,6 +205,18 @@ export interface SellingGuidance {
   note: string;
 }
 
+/**
+ * O quanto abaixo do piso da faixa a peça costuma sair rápido.
+ *
+ * Exportado porque a API também precisa deste número ao reconstruir a orientação de um
+ * anúncio antigo. Duplicá-lo lá faria os dois divergirem no dia em que alguém ajustasse um só.
+ */
+export const QUICK_SALE_FACTOR = 0.92;
+
+export function quickSaleFrom(suggestedLow: number): number {
+  return Math.round(suggestedLow * QUICK_SALE_FACTOR);
+}
+
 export function suggestSellingPrice(
   item: RigComponent,
   region: string,
@@ -217,7 +229,7 @@ export function suggestSellingPrice(
   return {
     suggestedLow: value.rangeLow,
     suggestedHigh: value.rangeHigh,
-    quickSale: Math.round(value.rangeLow * 0.92),
+    quickSale: quickSaleFrom(value.rangeLow),
     currency: pricing.currency,
     note:
       value.confidence === 'high'

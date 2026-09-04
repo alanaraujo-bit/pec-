@@ -246,9 +246,20 @@ export default function RigDetail() {
             label="Comparar com outro PC"
             variant="secondary"
             size="sm"
-            style={{ marginBottom: space.xxl }}
+            style={{ marginBottom: isOwner ? space.sm : space.xxl }}
             onPress={() => router.push(`/compare?left=${id}`)}
           />
+
+          {/* Vender nasce dentro da máquina: é uma decisão sobre o seu hardware. */}
+          {isOwner ? (
+            <Button
+              label="Anunciar uma peça"
+              variant="secondary"
+              size="sm"
+              style={{ marginBottom: space.xxl }}
+              onPress={() => router.push(`/rigs/${id}/sell`)}
+            />
+          ) : null}
         </>
       ) : (
         <Animated.View entering={FadeIn.duration(300)} style={{ marginBottom: space.xxl, gap: space.lg }}>

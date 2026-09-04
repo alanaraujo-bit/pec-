@@ -44,6 +44,8 @@ model User {
   reactions Reaction[]
   comments  Comment[]
 
+  listings  Listing[]
+
   following Follow[] @relation("follower")
   followers Follow[] @relation("following")
 
@@ -103,6 +105,7 @@ model Component {
   updatedAt      DateTime @updatedAt
 
   rigComponents RigComponent[]
+  listings      Listing[]
 
   @@index([category])
   @@index([category, brand])
@@ -161,6 +164,9 @@ model RigComponent {
   removedAt DateTime?
   /// Quando esta peça substituiu outra, aponta para ela: é a linha do PC Evolution.
   replacedId String?
+
+  /// Anúncios já criados para esta peça. Retirar e reanunciar cria outro, nunca reabre o vendido.
+  listings Listing[]
 
   @@index([rigId])
   @@index([rigId, removedAt])
@@ -265,4 +271,61 @@ model Comment {
   createdAt DateTime @default(now())
 
   @@index([eventId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace
+// ---------------------------------------------------------------------------
+
+enum ListingStatus {
+  ACTIVE
+  RESERVED
+  SOLD
+  WITHDRAWN
+}
+
+/// Anúncio de uma peça que está numa máquina do vendedor.
+///
+/// Três decisões deliberadas:
+///
+/// 1. O anúncio aponta para o `RigComponent`, não só para o `Component` do catálogo. É o
+///    que permite dizer "esta 3070 específica, comprada em 2022, deste PC" — e é também o
+///    que impede alguém de anunciar peça que não tem.
+///
+/// 2. `suggestedLow`/`suggestedHigh` guardam a faixa que o engine calculou **no momento do
+///    anúncio**. Sem isso, a faixa mudaria sozinha com a depreciação e o comprador veria
+///    um julgamento de preço diferente do que o vendedor viu ao anunciar.
+///
+/// 3. Não há `price` único negociado nem pagamento: o Pecê aproxima as pessoas e diz a
+///    verdade sobre o valor. A transação acontece fora, e é assim de propósito no MVP.
+model Listing {
+  id       String @id @default(cuid())
+  sellerId String
+  seller   User   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  rigComponentId String
+  rigComponent   RigComponent @relation(fields: [rigComponentId], references: [id], onDelete: Cascade)
+  componentId    String
+  component      Component    @relation(fields: [componentId], references: [id])
+
+  title       String
+  description String?
+  askingPrice Float
+  currency    String @default("BRL")
+  condition   String
+  region      String @default("BR")
+
+  status ListingStatus @default(ACTIVE)
+
+  /// Faixa estimada pelo engine quando o anúncio foi criado. Congelada de propósito.
+  suggestedLow  Float?
+  suggestedHigh Float?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  soldAt    DateTime?
+
+  @@index([status, createdAt])
+  @@index([sellerId, status])
+  @@index([componentId, status])
 }

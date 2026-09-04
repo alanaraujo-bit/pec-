@@ -21,23 +21,7 @@ import {
 import { prisma } from '../db.ts';
 import { optionalAuth, requireAuth } from '../auth.ts';
 import { toRig, toUsageProfile, type DbRigWithComponents } from '../mappers.ts';
-
-const INCLUDE_COMPONENTS = {
-  components: { include: { component: true }, orderBy: { addedAt: 'asc' as const } },
-};
-
-/** Carrega a máquina e o perfil de uso do dono — o par que o engine sempre precisa. */
-async function loadRigContext(rigId: string) {
-  const row = await prisma.rig.findUnique({
-    where: { id: rigId },
-    include: { ...INCLUDE_COMPONENTS, owner: { include: { profile: true } } },
-  });
-  if (!row) return null;
-
-  const rig = toRig(row as unknown as DbRigWithComponents);
-  const profile = toUsageProfile(row.owner.profile, row.owner.region);
-  return { row, rig, profile };
-}
+import { INCLUDE_COMPONENTS, loadRigContext, recordSnapshot } from '../snapshots.ts';
 
 /** Quem pode ver esta máquina, respeitando a configuração de privacidade do dono. */
 async function canView(
@@ -53,39 +37,6 @@ async function canView(
     where: { followerId_followingId: { followerId: viewerId, followingId: row.ownerId } },
   });
   return follows !== null;
-}
-
-/**
- * Grava um retrato do estado da máquina. É o que transforma o app em memória viva do PC:
- * cada mudança relevante fica registrada com o diagnóstico daquele momento.
- */
-async function recordSnapshot(rigId: string, trigger: string) {
-  const ctx = await loadRigContext(rigId);
-  if (!ctx) return null;
-
-  const diagnosis = diagnose(ctx.rig, ctx.profile);
-  const score = computeSetupScore(ctx.rig, ctx.profile, diagnosis);
-  const value = valuateRig(ctx.rig, ctx.profile.region);
-
-  return prisma.snapshot.create({
-    data: {
-      rigId,
-      setupScore: score.total,
-      verdict: diagnosis.verdict,
-      estimatedFps: diagnosis.performance.fps?.fps ?? null,
-      valueTotal: value.total,
-      currency: value.currency,
-      trigger,
-      summary: {
-        headline: diagnosis.headline,
-        findingCount: diagnosis.findings.length,
-        topFinding: diagnosis.findings[0]
-          ? { id: diagnosis.findings[0].id, what: diagnosis.findings[0].what, severity: diagnosis.findings[0].severity }
-          : null,
-        dimensions: score.dimensions.map((d) => ({ dimension: d.dimension, score: d.score })),
-      },
-    },
-  });
 }
 
 const createRigBody = z.object({
@@ -313,9 +264,21 @@ export async function rigRoutes(app: FastifyInstance) {
     if (!rig) return reply.code(404).send({ error: 'not_found' });
     if (rig.ownerId !== request.user!.id) return reply.code(403).send({ error: 'forbidden' });
 
-    await prisma.rigComponent.updateMany({
-      where: { id: componentId, rigId: id, removedAt: null },
-      data: { removedAt: new Date() },
+    await prisma.$transaction(async (tx) => {
+      await tx.rigComponent.updateMany({
+        where: { id: componentId, rigId: id, removedAt: null },
+        data: { removedAt: new Date() },
+      });
+
+      /**
+       * Peça que saiu da máquina não pode continuar anunciada: o anúncio promete uma peça
+       * específica deste PC, e sem ela a promessa deixou de existir. Retirar do ar, não
+       * apagar — o vendedor ainda vê o próprio histórico.
+       */
+      await tx.listing.updateMany({
+        where: { rigComponentId: componentId, status: { in: ['ACTIVE', 'RESERVED'] } },
+        data: { status: 'WITHDRAWN' },
+      });
     });
 
     await recordSnapshot(id, 'component-removed');

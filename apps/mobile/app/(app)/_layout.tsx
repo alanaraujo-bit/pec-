@@ -1,9 +1,13 @@
 /**
  * Navegação principal.
  *
- * Quatro abas. Cada uma responde a uma pergunta diferente que o usuário realmente tem:
- * "o que está acontecendo?", "como está meu PC?", "onde eu estou?" e "quem sou eu aqui?".
- * Uma quinta aba precisaria justificar sua existência, e nenhuma justifica.
+ * Cinco abas. Cada uma responde a uma pergunta diferente que o usuário realmente tem:
+ * "o que está acontecendo?", "como está meu PC?", "o que estão vendendo?", "onde eu estou?"
+ * e "quem sou eu aqui?".
+ *
+ * O Mercado ganhou aba porque é um destino, não um detalhe de uma máquina: quem procura
+ * peça chega com essa intenção, sem passar pelo próprio PC. Anunciar continua morando
+ * dentro da máquina — vender é uma decisão sobre o seu hardware, e é lá que ela nasce.
  */
 
 import { Tabs } from 'expo-router';
@@ -75,6 +79,13 @@ export default function AppLayout() {
         options={{
           title: 'Meus PCs',
           tabBarIcon: ({ focused }) => <TabIcon glyph="▣" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="market"
+        options={{
+          title: 'Mercado',
+          tabBarIcon: ({ focused }) => <TabIcon glyph="◇" focused={focused} />,
         }}
       />
       <Tabs.Screen

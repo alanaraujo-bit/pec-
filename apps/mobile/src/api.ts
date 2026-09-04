@@ -246,3 +246,105 @@ export interface FeedResponse {
   events: FeedEvent[];
   nextCursor: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Marketplace
+// ---------------------------------------------------------------------------
+
+export type PriceFairness = 'below-range' | 'in-range' | 'above-range' | 'far-above-range';
+
+/**
+ * Faixa de preço com rótulo e explicação, calculada pelo engine e enviada pronta.
+ *
+ * A tela usa isto para dar retorno enquanto a pessoa digita — comparando o número com
+ * `from`/`to` e mostrando o texto que já veio. Nada de regra de preço no app.
+ */
+export interface PriceBand {
+  fairness: PriceFairness;
+  label: string;
+  note: string;
+  from: number;
+  to: number | null;
+}
+
+export interface PriceAssessment {
+  fairness: PriceFairness;
+  note: string;
+  deltaPercent: number;
+  suggestedLow: number;
+  suggestedHigh: number;
+  quickSale: number;
+  currency: string;
+}
+
+export interface Listing {
+  id: string;
+  title: string;
+  description: string | null;
+  askingPrice: number;
+  currency: string;
+  condition: string;
+  region: string;
+  status: 'active' | 'reserved' | 'sold' | 'withdrawn';
+  createdAt: string;
+  soldAt: string | null;
+  component: {
+    id: string;
+    category: string;
+    brand: string;
+    model: string;
+    fullName: string;
+    releaseYear: number;
+    spec: Record<string, unknown>;
+  };
+  seller: { id: string; handle: string; displayName: string; avatarUrl: string | null; region: string };
+  /** `null` quando a peça não tem preço de referência no catálogo. */
+  priceAssessment: PriceAssessment | null;
+}
+
+export interface MarketResponse {
+  listings: Listing[];
+  nextCursor: string | null;
+}
+
+export interface ListingDetail {
+  listing: Listing;
+  isSeller: boolean;
+}
+
+export interface ListingDraftResponse {
+  draft: {
+    rigComponentId: string;
+    componentId: string;
+    category: string;
+    title: string;
+    condition: string;
+    conditionLabel: string;
+    quantity: number;
+    guidance: {
+      suggestedLow: number;
+      suggestedHigh: number;
+      quickSale: number;
+      currency: string;
+      note: string;
+    };
+    highlights: string[];
+  } | null;
+  bands: PriceBand[];
+  alreadyListed: { id: string; status: string } | null;
+  unpricedReason: string | null;
+}
+
+export interface RigDetailResponse {
+  rig: {
+    id: string;
+    name: string;
+    components: Array<{
+      id: string;
+      quantity: number;
+      condition: string;
+      component: { id: string; category: string; brand: string; model: string; fullName: string; releaseYear: number };
+    }>;
+  };
+  isOwner: boolean;
+}

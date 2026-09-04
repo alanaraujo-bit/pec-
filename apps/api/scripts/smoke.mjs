@@ -374,6 +374,173 @@ async function main() {
   check('comparação declara um vencedor com justificativa', Boolean(compare.body.comparison.verdict.reasoning));
 
   // -------------------------------------------------------------------------
+  section('Marketplace');
+
+  const biaDetail = await api('GET', `/rigs/${biaRigId}`, { token: bia.token });
+  const biaGpu = biaDetail.body.rig.components.find((c) => c.component.category === 'GPU');
+  const biaCooler = biaDetail.body.rig.components.find((c) => c.component.category === 'COOLER');
+
+  const draft = await api('GET', `/rigs/${biaRigId}/components/${biaGpu.id}/listing-draft`, {
+    token: bia.token,
+  });
+  check('rascunho de anúncio traz a faixa sugerida', draft.status === 200 && draft.body.draft !== null);
+  check(
+    'faixa de venda é faixa, não preço único',
+    draft.body.draft.guidance.suggestedLow < draft.body.draft.guidance.suggestedHigh,
+  );
+  check('título do anúncio vem do catálogo', /RTX 4070/i.test(draft.body.draft.title));
+
+  const draftAsOther = await api('GET', `/rigs/${biaRigId}/components/${biaGpu.id}/listing-draft`, {
+    token: alan.token,
+  });
+  check('rascunho de venda é só do dono', draftAsOther.status === 403);
+
+  const fairPrice = Math.round(
+    (draft.body.draft.guidance.suggestedLow + draft.body.draft.guidance.suggestedHigh) / 2,
+  );
+  const listed = await api('POST', '/market', {
+    token: bia.token,
+    body: { rigComponentId: biaGpu.id, askingPrice: fairPrice },
+  });
+  const listingId = listed.body?.listing?.id;
+  check('anúncio criado', listed.status === 201 && Boolean(listingId));
+  check('preço dentro da faixa é lido como justo', listed.body.listing.priceAssessment.fairness === 'in-range');
+  check('anúncio guarda a faixa que gerou o preço', listed.body.listing.priceAssessment.suggestedLow > 0);
+
+  const dupeListing = await api('POST', '/market', {
+    token: bia.token,
+    body: { rigComponentId: biaGpu.id, askingPrice: fairPrice },
+  });
+  check('peça não pode ter dois anúncios abertos', dupeListing.status === 409);
+
+  const foreignListing = await api('POST', '/market', {
+    token: alan.token,
+    body: { rigComponentId: biaGpu.id, askingPrice: 100 },
+  });
+  check('não dá para anunciar peça de outro', foreignListing.status === 403);
+
+  const shelf = await api('GET', '/market?category=GPU');
+  check('vitrine lista o anúncio', shelf.status === 200 && shelf.body.listings.some((l) => l.id === listingId));
+  const shelfOther = await api('GET', '/market?category=CPU');
+  check('filtro de categoria funciona', !shelfOther.body.listings.some((l) => l.id === listingId));
+
+  const shelfCombined = await api('GET', `/market?category=GPU&brand=${encodeURIComponent(shelf.body.listings[0].component.brand)}`);
+  check(
+    'dois filtros ao mesmo tempo continuam valendo os dois',
+    shelfCombined.body.listings.every((l) => l.component.category === 'GPU'),
+    shelfCombined.body.listings.map((l) => l.component.category).join(','),
+  );
+  const shelfConflicting = await api('GET', '/market?category=GPU&search=990%20PRO');
+  check(
+    'filtro que se contradiz devolve vazio, e não o filtro errado',
+    shelfConflicting.body.listings.length === 0,
+    `${shelfConflicting.body.listings.length} anúncios`,
+  );
+
+  const detail = await api('GET', `/market/${listingId}`, { token: alan.token });
+  check('detalhe do anúncio abre para qualquer pessoa', detail.status === 200);
+  check('comprador não é tratado como vendedor', detail.body.isSeller === false);
+  check('anúncio mostra quem vende', detail.body.listing.seller.handle === bia.handle);
+
+  // A regra que manda no produto, verificada de ponta a ponta.
+  const intelAfterListing = await api('GET', `/rigs/${biaRigId}/intelligence`, { token: bia.token });
+  check('anunciar peça não muda o veredito do engine', intelAfterListing.body.diagnosis.verdict === 'healthy');
+  check('anunciar peça não faz aparecer cenário de compra', intelAfterListing.body.scenarios.length === 0);
+
+  const valueStillPrivate = await api('GET', `/rigs/${biaRigId}/value`, { token: alan.token });
+  check('anunciar uma peça não expõe o valor do PC', valueStillPrivate.status === 403);
+
+  const biaEvents = await api('GET', `/users/${bia.handle}`, { token: bia.token });
+  check(
+    'anunciar não publica evento sem consentimento',
+    !(biaEvents.body.events ?? []).some((e) => e.kind === 'SALE'),
+  );
+
+  const overpriced = await api('PATCH', `/market/${listingId}`, {
+    token: bia.token,
+    body: { askingPrice: Math.round(draft.body.draft.guidance.suggestedHigh * 2) },
+  });
+  check('preço muito acima da faixa é apontado', overpriced.body.listing.priceAssessment.fairness === 'far-above-range');
+  check('mas o preço exagerado é aceito — o engine avalia, não proíbe', overpriced.status === 200);
+
+  const foreignEdit = await api('PATCH', `/market/${listingId}`, {
+    token: alan.token,
+    body: { askingPrice: 1 },
+  });
+  check('não dá para editar anúncio de outro', foreignEdit.status === 403);
+
+  const withdrawn = await api('DELETE', `/market/${listingId}`, { token: bia.token });
+  check('anúncio pode ser retirado do ar', withdrawn.status === 204);
+  const shelfAfter = await api('GET', '/market?category=GPU');
+  check('anúncio retirado some da vitrine', !shelfAfter.body.listings.some((l) => l.id === listingId));
+  const reactivated = await api('PATCH', `/market/${listingId}`, {
+    token: bia.token,
+    body: { status: 'active' },
+  });
+  check('anúncio retirado pode voltar', reactivated.body.listing.status === 'active');
+
+  // Venda de verdade: a peça sai da análise e entra na história.
+  const coolerListing = await api('POST', '/market', {
+    token: bia.token,
+    body: { rigComponentId: biaCooler.id, askingPrice: 200 },
+  });
+  const coolerListingId = coolerListing.body.listing.id;
+  const sold = await api('PATCH', `/market/${coolerListingId}`, {
+    token: bia.token,
+    body: { status: 'sold', removeFromRig: true, publishEvent: true },
+  });
+  check('venda registrada', sold.body.listing.status === 'sold' && Boolean(sold.body.listing.soldAt));
+
+  const afterSale = await api('GET', `/rigs/${biaRigId}`, { token: bia.token });
+  check(
+    'peça vendida sai da máquina',
+    !afterSale.body.rig.components.some((c) => c.id === biaCooler.id),
+  );
+  const historyAfterSale = await api('GET', `/rigs/${biaRigId}/history`, { token: bia.token });
+  check(
+    'a venda vira retrato no histórico',
+    historyAfterSale.body.snapshots.some((s) => s.trigger === 'component-sold'),
+  );
+
+  const soldEvents = await api('GET', `/users/${bia.handle}`, { token: bia.token });
+  check(
+    'com consentimento, a venda aparece no perfil',
+    (soldEvents.body.events ?? []).some((e) => e.kind === 'SALE'),
+  );
+
+  const reopen = await api('PATCH', `/market/${coolerListingId}`, {
+    token: bia.token,
+    body: { status: 'active' },
+  });
+  check('venda é definitiva — não dá para reabrir o anúncio vendido', reopen.status === 409);
+
+  // Anúncio órfão: a peça saiu do PC por outro caminho que não a venda.
+  const biaCase = afterSale.body.rig.components.find((c) => c.component.category === 'CASE');
+  const caseListing = await api('POST', '/market', {
+    token: bia.token,
+    body: { rigComponentId: biaCase.id, askingPrice: 350 },
+  });
+  const caseListingId = caseListing.body.listing.id;
+  await api('DELETE', `/rigs/${biaRigId}/components/${biaCase.id}`, { token: bia.token });
+  const orphan = await api('GET', `/market/${caseListingId}`);
+  check(
+    'peça removida da máquina não fica anunciada',
+    orphan.body.listing.status === 'withdrawn',
+    orphan.body.listing.status,
+  );
+
+  const allAsOther = await api('GET', '/market?status=all', { token: alan.token });
+  check(
+    'status=all não expõe anúncio vendido ou retirado de outra pessoa',
+    !allAsOther.body.listings.some((l) => l.seller.handle === bia.handle),
+  );
+  const allAsOwner = await api('GET', '/market?status=all', { token: bia.token });
+  check(
+    'o vendedor vê o próprio histórico de anúncios',
+    allAsOwner.body.listings.some((l) => l.id === coolerListingId),
+  );
+
+  // -------------------------------------------------------------------------
   section('Segurança');
 
   const noAuth = await api('GET', '/rigs');

@@ -25,7 +25,7 @@ desequilibrado` existe justamente para impedir que o produto vire um ranking de 
 ```
 packages/core     Domínio puro em TypeScript. Sem banco, sem HTTP, sem React.
                   Modelo de FPS, diagnóstico, Setup Score, valuation, comparação,
-                  compatibilidade e o catálogo de hardware.
+                  compatibilidade, marketplace e o catálogo de hardware.
 
 apps/api          Fastify + Prisma + PostgreSQL (Railway).
                   Consome o core; nenhuma regra de domínio vive aqui.
@@ -48,9 +48,10 @@ livre não diz se é 8GB ou Ti, e sem isso não existe gargalo, score nem valor 
 
 | Área | Situação |
 |---|---|
-| Engine de domínio | ✅ 35 testes passando |
-| API em produção | ✅ 70 verificações ponta a ponta contra o Postgres real |
-| App mobile | ✅ 15 telas, sem erro de console |
+| Engine de domínio | ✅ 41 testes passando |
+| API em produção | ✅ 104 verificações ponta a ponta contra o Postgres real |
+| App mobile | ✅ 18 telas, sem erro de console |
+| Marketplace | ✅ Anúncio a partir da peça do PC, com a faixa do engine |
 | Deploy | ✅ https://api-production-eb453.up.railway.app |
 | Emulador Android | ⛔ Bloqueado — ver [BLOCKERS.md](BLOCKERS.md) |
 | iOS | ⛔ Exige macOS ou EAS Build — ver [BLOCKERS.md](BLOCKERS.md) |
@@ -72,8 +73,9 @@ cd apps/mobile && npx expo start
 ### Testes
 
 ```bash
-# Domínio: modelo de FPS, diagnóstico, score, cenários
-cd packages/core && node --test src/engine/performance.test.ts src/engine/diagnosis.test.ts
+# Domínio: modelo de FPS, diagnóstico, score, cenários, marketplace.
+# O glob é proposital: listar arquivos à mão faz um teste novo sumir da suíte sem ninguém notar.
+cd packages/core && npm test
 
 # Gesto de reação (lógica pura)
 cd apps/mobile && node --test src/components/reactionGesture.test.ts
@@ -113,7 +115,12 @@ significa desempenho já comprado e parado. Tratar os dois igual faria o produto
 
 **Evento automático nunca publica sozinho.** Trocar uma peça registra a mudança na máquina e
 então *pergunta* se o usuário quer publicar. O botão de não publicar é tão fácil de tocar
-quanto o de publicar.
+quanto o de publicar. Anunciar e vender no marketplace seguem a mesma regra.
+
+**O marketplace não tem preço próprio.** A faixa de um anúncio é a mesma faixa da valuation,
+e o engine *avalia* o preço pedido sem nunca proibi-lo. O teste `anunciar todas as peças não
+muda nada no diagnóstico nem no Setup Score` é a forma executável disso: se um dia a
+monetização começar a mexer na verdade técnica, ele quebra antes de chegar na tela de alguém.
 
 **Privacidade tem padrão fechado.** Visibilidade da máquina, exposição do valor estimado e
 escopo dos eventos são explícitos e começam no mais restrito.
