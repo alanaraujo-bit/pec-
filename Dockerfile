@@ -26,5 +26,10 @@ RUN npx prisma generate --schema apps/api/prisma/schema.prisma
 ENV NODE_ENV=production
 EXPOSE 3333
 
-# `db push` mantém o schema em dia no deploy; o seed é idempotente.
-CMD ["sh", "-c", "npx prisma db push --schema apps/api/prisma/schema.prisma --accept-data-loss --skip-generate && node --experimental-transform-types apps/api/prisma/seed.ts && node --experimental-transform-types apps/api/src/server.ts"]
+# O servidor e nada mais.
+#
+# Migrar o schema e popular o catálogo são passos deliberados, executados sob demanda
+# (npm run db:push / db:seed no workspace da API) — nunca a cada início de container.
+# Railway reinicia containers por conta própria; rodar "db push --accept-data-loss" em
+# todo boot colocaria dados de produção em risco a cada reinício.
+CMD ["node", "--experimental-transform-types", "apps/api/src/server.ts"]

@@ -136,6 +136,7 @@ export async function userRoutes(app: FastifyInstance) {
         componentCount: rig.components.length,
         setupScore: score.total,
         tier: score.tier,
+        verdict: diagnosis.verdict,
         status: oneLineStatus(diagnosis),
         estimatedFps: diagnosis.performance.fps?.fps ?? null,
         // O valor respeita a escolha do dono, sempre.
