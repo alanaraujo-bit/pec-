@@ -6,13 +6,26 @@
  * — máquinas privadas somem, valor só aparece se ele liberou.
  */
 
+import { useState } from 'react';
 import { RefreshControl, View, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
-import { api, type FeedEvent } from '../../src/api.ts';
-import { Avatar, Button, Divider, Empty, ErrorState, Loading, Panel, Pill, Screen, Txt } from '../../src/ui.tsx';
+import { api, ApiError, type FeedEvent } from '../../src/api.ts';
+import {
+  Avatar,
+  Button,
+  Divider,
+  Empty,
+  ErrorState,
+  Field,
+  Loading,
+  Panel,
+  Pill,
+  Screen,
+  Txt,
+} from '../../src/ui.tsx';
 import { color, money, radius, space, timeAgo, verdictColor, type Verdict } from '../../src/theme.ts';
 import { useSession } from '../../src/session.tsx';
 
@@ -61,9 +74,17 @@ export default function Profile() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, signOut } = useSession();
+  const [erasing, setErasing] = useState(false);
+  const [password, setPassword] = useState('');
 
   // Sem handle na rota, o perfil é o do próprio usuário — é o caso da aba.
   const handle = params.handle ?? user?.handle;
+
+  const erase = useMutation({
+    mutationFn: () => api.del('/me', { password }),
+    // Conta apagada: a sessão morre junto, senão o app ficaria segurando um token de ninguém.
+    onSuccess: () => signOut(),
+  });
 
   const { data, isLoading, error, refetch, isRefetching } = useQuery({
     queryKey: ['profile', handle],
@@ -259,8 +280,55 @@ export default function Profile() {
 
       {/* Sair fica no fim, discreto: é uma saída, não uma ação principal. */}
       {data.isSelf ? (
-        <View style={{ marginTop: space.xxxl, alignItems: 'center' }}>
+        <View style={{ marginTop: space.xxxl, alignItems: 'center', gap: space.lg }}>
           <Button label="Sair da conta" variant="ghost" size="sm" onPress={() => void signOut()} />
+
+          {/*
+            Apagar a conta fica atrás de dois toques e da senha — nunca de um só. Mas fica
+            aqui, visível: quem entregou os dados do próprio PC precisa poder tirá-los,
+            e esconder essa saída seria transformar o cadastro numa armadilha.
+          */}
+          {erasing ? (
+            <Panel style={{ gap: space.md, width: '100%' }}>
+              <Txt variant="bodyStrong">Apagar sua conta</Txt>
+              <Txt variant="small" tone="dim">
+                Suas máquinas, o histórico de evolução, os eventos e os anúncios somem junto,
+                e isso não pode ser desfeito. Confirme com sua senha.
+              </Txt>
+              <Field
+                label="Senha"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                placeholder="Sua senha"
+                error={erase.error ? (erase.error as ApiError).message : null}
+              />
+              <Button
+                label="Apagar definitivamente"
+                variant="danger"
+                size="sm"
+                disabled={password.length === 0}
+                loading={erase.isPending}
+                onPress={() => erase.mutate()}
+              />
+              <Button
+                label="Cancelar"
+                variant="ghost"
+                size="sm"
+                onPress={() => {
+                  setErasing(false);
+                  setPassword('');
+                }}
+              />
+            </Panel>
+          ) : (
+            <Pressable onPress={() => setErasing(true)} hitSlop={8}>
+              <Txt variant="small" tone="faint">
+                Apagar minha conta
+              </Txt>
+            </Pressable>
+          )}
         </View>
       ) : null}
     </Screen>

@@ -34,6 +34,17 @@ async function apiCall(method, path, { token, body } = {}) {
   return json;
 }
 
+const PASSWORD = 'demo-visual-123';
+
+/**
+ * Contas criadas por esta execução, para serem removidas no fim.
+ *
+ * A verificação visual roda contra a API real, e por muito tempo cada rodada deixava
+ * duas contas de demonstração para sempre no banco — que apareciam no feed de descoberta
+ * de quem usa o app de verdade.
+ */
+const created = [];
+
 /** Monta um cenário realista: PC desequilibrado, que produz um diagnóstico interessante. */
 async function seed() {
   const stamp = Date.now().toString(36);
@@ -42,13 +53,14 @@ async function seed() {
   const auth = await apiCall('POST', '/auth/register', {
     body: {
       email: `${handle}@pece.demo`,
-      password: 'demo-visual-123',
+      password: PASSWORD,
       handle,
       displayName: 'Alan Araujo',
       region: 'BR',
     },
   });
   const token = auth.token;
+  created.push({ token, handle });
 
   await apiCall('PUT', '/me/profile', {
     token,
@@ -119,12 +131,13 @@ async function seed() {
   const other = await apiCall('POST', '/auth/register', {
     body: {
       email: `${otherHandle}@pece.demo`,
-      password: 'demo-visual-123',
+      password: PASSWORD,
       handle: otherHandle,
       displayName: 'Beatriz Lima',
       region: 'BR',
     },
   });
+  created.push({ token: other.token, handle: otherHandle });
   await apiCall('PUT', '/me/profile', {
     token: other.token,
     body: {
@@ -310,7 +323,27 @@ async function main() {
   console.log(`Capturas em ${OUT}`);
 }
 
-main().catch((err) => {
+/** Remove as contas de demonstração pela mesma rota que qualquer pessoa usaria. */
+async function cleanup() {
+  let removed = 0;
+  for (const user of created) {
+    try {
+      await apiCall('DELETE', '/me', { token: user.token, body: { password: PASSWORD } });
+      removed += 1;
+    } catch {
+      // Falha na limpeza não pode derrubar o resultado da verificação.
+    }
+  }
+  if (created.length > 0) {
+    console.log(`Limpeza: ${removed}/${created.length} contas de demonstração removidas.`);
+  }
+}
+
+try {
+  await main();
+} catch (err) {
   console.error('Falhou:', err.message);
+  await cleanup();
   process.exit(1);
-});
+}
+await cleanup();

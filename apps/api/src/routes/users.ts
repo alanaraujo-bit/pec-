@@ -14,7 +14,7 @@ import {
 } from '@pece/core';
 import { Visibility } from '@prisma/client';
 import { prisma } from '../db.ts';
-import { optionalAuth, requireAuth } from '../auth.ts';
+import { optionalAuth, requireAuth, verifyPassword } from '../auth.ts';
 import { toRig, toUsageProfile, type DbRigWithComponents } from '../mappers.ts';
 import { EVENT_INCLUDE, serializeEvent } from './social.ts';
 
@@ -84,6 +84,40 @@ export async function userRoutes(app: FastifyInstance) {
         region: user.region,
       },
     };
+  });
+
+  /**
+   * Apagar a conta.
+   *
+   * Existe por dois motivos, e o primeiro é o que manda: quem entrega os dados do próprio
+   * PC para um produto precisa poder tirá-los de lá. Um app que só sabe cadastrar não
+   * merece o cadastro.
+   *
+   * O segundo é operacional: com esta rota, os testes ponta a ponta limpam o que sujam
+   * pelo mesmo caminho que qualquer pessoa usaria, em vez de uma porta dos fundos que
+   * ninguém exercita. As contas de teste antes ficavam no banco de produção para sempre e
+   * apareciam no feed de descoberta de gente real.
+   *
+   * Exige a senha: apagar tudo é irreversível, e um token vazado não pode bastar.
+   */
+  app.delete('/me', { preHandler: requireAuth }, async (request, reply) => {
+    const parsed = z.object({ password: z.string().min(1) }).safeParse(request.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: 'validation', message: 'Confirme sua senha para apagar a conta.' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: request.user!.id } });
+    if (!user) return reply.code(404).send({ error: 'not_found' });
+
+    if (!(await verifyPassword(parsed.data.password, user.passwordHash))) {
+      return reply.code(401).send({ error: 'unauthorized', message: 'Senha incorreta.' });
+    }
+
+    // Máquinas, peças, retratos, eventos, reações e comentários caem por cascata no schema.
+    await prisma.user.delete({ where: { id: user.id } });
+    return reply.code(204).send();
   });
 
   /** Perfil público. */

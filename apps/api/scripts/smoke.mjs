@@ -45,20 +45,32 @@ async function api(method, path, { token, body } = {}) {
 }
 
 const stamp = Date.now().toString(36);
+const PASSWORD = 'senha-de-teste-123';
+
+/**
+ * Contas criadas por esta execução.
+ *
+ * O smoke roda contra o Postgres de produção de propósito — é o que torna o teste real.
+ * O preço disso é que cada execução criava gente que nunca saía do banco, e essas contas
+ * apareciam no feed de descoberta de usuários de verdade. Agora a execução limpa o que suja.
+ */
+const created = [];
 
 async function createUser(suffix, displayName) {
   const handle = `smoke_${suffix}_${stamp}`.slice(0, 20);
   const res = await api('POST', '/auth/register', {
     body: {
       email: `${handle}@pece.test`,
-      password: 'senha-de-teste-123',
+      password: PASSWORD,
       handle,
       displayName,
       region: 'BR',
     },
   });
   if (res.status !== 201) throw new Error(`registro falhou: ${JSON.stringify(res.body)}`);
-  return { token: res.body.token, handle, id: res.body.user.id };
+  const user = { token: res.body.token, handle, id: res.body.user.id };
+  created.push(user);
+  return user;
 }
 
 async function addPart(token, rigId, componentId, extra = {}) {
@@ -570,12 +582,70 @@ async function main() {
   check('e-mail duplicado é rejeitado', dupe.status === 409);
 
   // -------------------------------------------------------------------------
-  console.log(`\n${'─'.repeat(50)}`);
-  console.log(`${passed} passaram, ${failed} falharam`);
-  process.exit(failed > 0 ? 1 : 0);
+  section('Apagar a conta');
+
+  const guest = await createUser('guest', 'Convidada');
+  const guestRig = await api('POST', '/rigs', { token: guest.token, body: { name: 'PC da Convidada' } });
+  await addPart(guest.token, guestRig.body.rig.id, 'cpu-r7-7800x3d');
+  await api('POST', '/events', {
+    token: guest.token,
+    body: { kind: 'BUILD', title: 'Montagem nova', rigId: guestRig.body.rig.id },
+  });
+
+  const wrongPassword = await api('DELETE', '/me', {
+    token: guest.token,
+    body: { password: 'não-é-essa' },
+  });
+  check('apagar a conta exige a senha certa', wrongPassword.status === 401);
+
+  const noPassword = await api('DELETE', '/me', { token: guest.token });
+  check('apagar a conta sem confirmar senha é recusado', noPassword.status === 400);
+
+  const erased = await api('DELETE', '/me', { token: guest.token, body: { password: PASSWORD } });
+  check('a pessoa consegue apagar a própria conta', erased.status === 204);
+
+  const gone = await api('GET', `/users/${guest.handle}`);
+  check('perfil apagado não existe mais', gone.status === 404);
+
+  const feedAfterErase = await api('GET', '/feed');
+  check(
+    'o que a conta apagada publicou sai do feed junto',
+    !feedAfterErase.body.events.some((e) => e.author.handle === guest.handle),
+  );
+
 }
 
-main().catch((err) => {
+/**
+ * Remove as contas que esta execução criou.
+ *
+ * Roda mesmo quando o teste falha no meio: teste que quebra e deixa sujeira em produção
+ * é pior do que teste que quebra. Usa a mesma rota que qualquer pessoa usaria para apagar
+ * a própria conta — sem porta dos fundos.
+ */
+async function cleanup() {
+  let removed = 0;
+  for (const user of created) {
+    try {
+      const res = await api('DELETE', '/me', { token: user.token, body: { password: PASSWORD } });
+      if (res.status === 204 || res.status === 404) removed += 1;
+    } catch {
+      // Rede caindo na limpeza não pode mascarar o resultado do teste.
+    }
+  }
+  if (created.length > 0) {
+    console.log(`\nLimpeza: ${removed}/${created.length} contas de teste removidas.`);
+  }
+}
+
+try {
+  await main();
+} catch (err) {
   console.error('\nErro fatal:', err.message);
-  process.exit(1);
-});
+  failed += 1;
+} finally {
+  await cleanup();
+}
+
+console.log(`\n${'─'.repeat(50)}`);
+console.log(`${passed} passaram, ${failed} falharam`);
+process.exit(failed > 0 ? 1 : 0);

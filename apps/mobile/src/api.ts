@@ -97,7 +97,8 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body ?? {}),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body ?? {}),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body ?? {}),
-  del: <T>(path: string) => request<T>('DELETE', path),
+  // DELETE com corpo existe para confirmar senha ao apagar a conta.
+  del: <T>(path: string, body?: unknown) => request<T>('DELETE', path, body),
 };
 
 // ---------------------------------------------------------------------------
