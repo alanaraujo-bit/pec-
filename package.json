@@ -2,11 +2,21 @@
   "name": "pece",
   "private": true,
   "version": "0.1.0",
-  "workspaces": ["packages/*", "apps/*"],
-  "engines": { "node": ">=20" },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "mobile": "npm run start -w @pece/mobile",
     "api:dev": "npm run dev -w @pece/api",
     "core:build": "npm run build -w @pece/core"
+  },
+  "allowScripts": {
+    "prisma@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "@prisma/client@6.19.3": true
   }
 }

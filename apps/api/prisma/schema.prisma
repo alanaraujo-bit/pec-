@@ -1,0 +1,268 @@
+// Esquema do Pecê.
+//
+// Três decisões que carregam o resto:
+//
+// 1. `Component` guarda specs como JSON tipado pelo `@pece/core`. Um schema relacional
+//    rígido por categoria daria 17 tabelas com colunas quase todas nulas; o JSON mantém
+//    a tipagem no domínio, onde ela é verificada, e deixa o banco simples de evoluir.
+//
+// 2. `RigComponent` tem `removedAt` em vez de DELETE. O histórico de evolução da máquina
+//    é uma funcionalidade do produto, não um log — apagar a peça antiga apagaria a
+//    história que o perfil precisa mostrar.
+//
+// 3. Visibilidade é explícita em cada nível (rig, evento, valor). O usuário controla o
+//    que é público, e o default é sempre o mais fechado.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Usuário
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  handle       String   @unique
+  displayName  String
+  bio          String?
+  avatarUrl    String?
+  region       String   @default("BR")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  profile   Profile?
+  rigs      Rig[]
+  events    Event[]
+  reactions Reaction[]
+  comments  Comment[]
+
+  following Follow[] @relation("follower")
+  followers Follow[] @relation("following")
+
+  @@index([handle])
+}
+
+/// Respostas do onboarding. Sem isso o engine não tem contexto e não pode recomendar nada.
+model Profile {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Array de { kind, weight } — ver UsageProfile em @pece/core.
+  workloads    Json
+  resolution   String  @default("1080p")
+  targetFps    Int?
+  budgetTier   String  @default("moderate")
+  budgetAmount Float?
+  currency     String  @default("BRL")
+  /// Array de Priority.
+  priorities   Json
+  expertise    String  @default("beginner")
+
+  updatedAt DateTime @updatedAt
+}
+
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followingId])
+}
+
+// ---------------------------------------------------------------------------
+// Catálogo de hardware
+// ---------------------------------------------------------------------------
+
+model Component {
+  id             String   @id
+  category       String
+  brand          String
+  family         String
+  model          String
+  fullName       String
+  releaseYear    Int
+  releaseQuarter Int?
+  /// ComponentSpec de @pece/core — a forma é validada no domínio.
+  spec           Json
+  msrpUsd        Float?
+  discontinued   Boolean  @default(false)
+  imageUrl       String?
+  updatedAt      DateTime @updatedAt
+
+  rigComponents RigComponent[]
+
+  @@index([category])
+  @@index([category, brand])
+  @@index([category, brand, family])
+  @@index([fullName])
+}
+
+// ---------------------------------------------------------------------------
+// Máquinas
+// ---------------------------------------------------------------------------
+
+enum Visibility {
+  PUBLIC
+  FOLLOWERS
+  PRIVATE
+}
+
+model Rig {
+  id        String  @id @default(cuid())
+  ownerId   String
+  owner     User    @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  name      String
+  kind      String  @default("desktop")
+  isPrimary Boolean @default(false)
+
+  visibility Visibility @default(PUBLIC)
+  /// Valor estimado é sensível — o padrão é não expor.
+  showValue  Boolean    @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  components RigComponent[]
+  snapshots  Snapshot[]
+  events     Event[]
+
+  @@index([ownerId])
+}
+
+model RigComponent {
+  id          String    @id @default(cuid())
+  rigId       String
+  rig         Rig       @relation(fields: [rigId], references: [id], onDelete: Cascade)
+  componentId String
+  component   Component @relation(fields: [componentId], references: [id])
+
+  quantity     Int      @default(1)
+  condition    String   @default("new")
+  acquiredAt   DateTime?
+  paidAmount   Float?
+  paidCurrency String?
+  notes        String?
+
+  addedAt DateTime @default(now())
+  /// Preserva a história da máquina. Peça removida some da análise, não do passado.
+  removedAt DateTime?
+  /// Quando esta peça substituiu outra, aponta para ela: é a linha do PC Evolution.
+  replacedId String?
+
+  @@index([rigId])
+  @@index([rigId, removedAt])
+}
+
+/// Memória viva da máquina: um retrato do diagnóstico a cada mudança relevante.
+model Snapshot {
+  id    String @id @default(cuid())
+  rigId String
+  rig   Rig    @relation(fields: [rigId], references: [id], onDelete: Cascade)
+
+  setupScore  Int
+  verdict     String
+  estimatedFps Int?
+  valueTotal  Float?
+  currency    String  @default("BRL")
+  /// Diagnóstico resumido no momento do retrato.
+  summary     Json
+  /// O que gerou o retrato: 'created', 'component-added', 'component-replaced', 'profile-changed'.
+  trigger     String
+
+  createdAt DateTime @default(now())
+
+  @@index([rigId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Social
+// ---------------------------------------------------------------------------
+
+enum EventKind {
+  UPGRADE
+  BUILD
+  BENCHMARK
+  MAINTENANCE
+  PURCHASE
+  SALE
+  SETUP
+  ACHIEVEMENT
+  MILESTONE
+  DISCUSSION
+}
+
+model Event {
+  id       String    @id @default(cuid())
+  authorId String
+  author   User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  rigId    String?
+  rig      Rig?      @relation(fields: [rigId], references: [id], onDelete: SetNull)
+  kind     EventKind
+
+  title String
+  body  String?
+  /// Dados estruturados do acontecimento (peça antiga, peça nova, delta de score...).
+  payload Json?
+
+  visibility Visibility @default(PUBLIC)
+  /// Evento gerado por ação estruturada, não escrito à mão. Nunca publica sem consentimento.
+  automatic  Boolean    @default(false)
+
+  createdAt DateTime @default(now())
+
+  reactions Reaction[]
+  comments  Comment[]
+
+  @@index([authorId, createdAt])
+  @@index([createdAt])
+}
+
+enum ReactionKind {
+  LOVE
+  LIKE
+  DISLIKE
+}
+
+model Reaction {
+  id      String       @id @default(cuid())
+  eventId String
+  event   Event        @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind    ReactionKind
+
+  createdAt DateTime @default(now())
+
+  /// Uma reação por pessoa por evento — trocar substitui, não acumula.
+  @@unique([eventId, userId])
+  @@index([eventId])
+}
+
+model Comment {
+  id       String  @id @default(cuid())
+  eventId  String
+  event    Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parentId String?
+  parent   Comment?  @relation("replies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  Comment[] @relation("replies")
+
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([eventId, createdAt])
+}
