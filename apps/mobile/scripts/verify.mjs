@@ -103,7 +103,7 @@ async function seed() {
 
   await apiCall('PATCH', `/rigs/${rigId}`, { token, body: { showValue: true } });
 
-  await apiCall('POST', '/events', {
+  const mainEvent = await apiCall('POST', '/events', {
     token,
     body: {
       kind: 'UPGRADE',
@@ -169,7 +169,20 @@ async function seed() {
 
   await apiCall('PUT', `/users/${otherHandle}/follow`, { token });
 
-  return { token, handle, rigId, otherHandle, otherRigId: otherRig.rig.id };
+  // Um comentário, para a tela de evento não aparecer vazia na verificação.
+  await apiCall('POST', `/events/${mainEvent.event.id}/comments`, {
+    token: other.token,
+    body: { body: 'Boa troca! Caiu quanto a temperatura?' },
+  });
+
+  return {
+    token,
+    handle,
+    rigId,
+    otherHandle,
+    otherRigId: otherRig.rig.id,
+    eventId: mainEvent.event.id,
+  };
 }
 
 async function main() {
@@ -194,6 +207,15 @@ async function main() {
     { name: '08-rankings', route: '/rankings' },
     { name: '09-profile', route: '/profile', full: true },
     { name: '10-other-profile', route: `/profile?handle=${ctx.otherHandle}`, full: true },
+    { name: '11-event', route: `/events/${ctx.eventId}`, full: true },
+    { name: '12-compare', route: `/compare?left=${ctx.rigId}`, full: true },
+    {
+      name: '12b-compare-result',
+      route: `/compare?left=${ctx.rigId}&right=${ctx.otherRigId}`,
+      full: true,
+    },
+    { name: '13-welcome', route: '/', anon: true },
+    { name: '14-login', route: '/(auth)/login', anon: true },
   ];
 
   let problems = 0;

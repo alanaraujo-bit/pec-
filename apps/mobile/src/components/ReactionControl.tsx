@@ -27,6 +27,12 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 
 import { color, radius, space, type as typo } from '../theme.ts';
+import {
+  NO_SELECTION,
+  SLOT_WIDTH,
+  indexFromTranslation,
+  resolveReaction,
+} from './reactionGesture.ts';
 
 export type ReactionKind = 'LOVE' | 'LIKE' | 'DISLIKE';
 
@@ -43,9 +49,9 @@ const OPTIONS: ReactionOption[] = [
   { kind: 'DISLIKE', emoji: '👎', label: 'Não curti', tint: color.dislike },
 ];
 
-const ITEM_SIZE = 46;
+// ITEM_SIZE + ITEM_GAP precisa bater com SLOT_WIDTH em reactionGesture.ts.
+const ITEM_SIZE = SLOT_WIDTH - 6;
 const ITEM_GAP = 6;
-const SLOT = ITEM_SIZE + ITEM_GAP;
 const TRAY_PADDING = 8;
 
 /** Retorno tátil só existe no aparelho; na web é ruído no console. */
@@ -75,12 +81,11 @@ export function ReactionControl({
 
   const commit = useCallback(
     (index: number) => {
-      if (index < 0) return;
-      const option = OPTIONS[index]!;
+      const decision = resolveReaction(index, current);
+      if (decision.action === 'none') return;
       tap(Haptics.ImpactFeedbackStyle.Medium);
-      // Escolher a reação que já está ativa desfaz — o mesmo gesto liga e desliga.
-      if (option.kind === current) onClear();
-      else onReact(option.kind);
+      if (decision.action === 'clear') onClear();
+      else onReact(decision.kind);
     },
     [current, onReact, onClear],
   );
@@ -100,21 +105,17 @@ export function ReactionControl({
       runOnJS(openTray)();
     })
     .onUpdate((event) => {
-      // A bandeja abre para a direita a partir do botão; x=0 é o centro do primeiro item.
-      const index = Math.round(event.translationX / SLOT);
-      const clamped = Math.max(0, Math.min(OPTIONS.length - 1, index));
-      // Arrastar muito para baixo cancela — saída natural para quem se arrependeu.
-      const cancelled = event.translationY > 90;
-      const next = cancelled ? -1 : clamped;
+      // Mapeamento em reactionGesture.ts, coberto por teste — aqui só o efeito visual.
+      const next = indexFromTranslation(event.translationX, event.translationY);
       if (next !== active.value) {
         active.value = next;
         if (next >= 0) runOnJS(hoverTick)();
       }
     })
     .onEnd(() => {
-      if (active.value >= 0) runOnJS(commit)(active.value);
+      if (active.value !== NO_SELECTION) runOnJS(commit)(active.value);
       open.value = withTiming(0, { duration: 160 });
-      active.value = -1;
+      active.value = NO_SELECTION;
     })
     .onFinalize(() => {
       open.value = withTiming(0, { duration: 160 });

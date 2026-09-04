@@ -23,7 +23,18 @@ import { categoryIcon, categoryLabel, color, radius, space } from '../../../../s
 const CORE = ['CPU', 'GPU', 'MOTHERBOARD', 'RAM', 'STORAGE', 'PSU', 'COOLER', 'CASE', 'FAN'];
 const PERIPHERALS = ['MONITOR', 'KEYBOARD', 'MOUSE', 'HEADSET', 'MICROPHONE', 'WEBCAM', 'MOUSEPAD', 'CONTROLLER'];
 
-type Step = 'category' | 'brand' | 'family' | 'model' | 'confirm';
+type Step = 'category' | 'brand' | 'family' | 'model' | 'confirm' | 'published';
+
+/**
+ * Resultado de uma troca de peça. Guardado para a etapa de consentimento: o evento só
+ * vai para o feed se a pessoa disser que sim.
+ */
+interface UpgradeOutcome {
+  fromModel: string;
+  toModel: string;
+  scoreBefore: number;
+  scoreAfter: number;
+}
 
 /** Linha selecionável — o mesmo formato nos quatro passos mantém o ritmo. */
 function Row({
@@ -71,17 +82,30 @@ function Row({
 }
 
 export default function AddComponent() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  /**
+   * `replaces` chega quando o usuário veio de "trocar esta peça". Nesse caso o fluxo é o
+   * mesmo, mas o resultado é uma substituição — e é o que alimenta o PC Evolution.
+   */
+  const { id, replaces, replacesName, replacesCategory } = useLocalSearchParams<{
+    id: string;
+    replaces?: string;
+    replacesName?: string;
+    replacesCategory?: string;
+  }>();
   const router = useRouter();
   const queryClient = useQueryClient();
 
-  const [step, setStep] = useState<Step>('category');
-  const [category, setCategory] = useState<string | null>(null);
+  const isReplacing = Boolean(replaces);
+
+  const [step, setStep] = useState<Step>(isReplacing && replacesCategory ? 'brand' : 'category');
+  const [category, setCategory] = useState<string | null>(replacesCategory ?? null);
   const [brand, setBrand] = useState<string | null>(null);
   const [family, setFamily] = useState<string | null>(null);
   const [selected, setSelected] = useState<CatalogComponent | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [search, setSearch] = useState('');
+  const [outcome, setOutcome] = useState<UpgradeOutcome | null>(null);
+  const [publishing, setPublishing] = useState(false);
 
   // ---- Consultas de cada nível ----
 
@@ -116,15 +140,68 @@ export default function AddComponent() {
   });
 
   const add = useMutation({
-    mutationFn: () =>
-      api.post(`/rigs/${id}/components`, { componentId: selected!.id, quantity }),
-    onSuccess: async () => {
+    mutationFn: async () => {
+      // Score antes da mudança, para conseguir mostrar o impacto real da troca.
+      const before = isReplacing
+        ? await api
+            .get<{ score: { total: number } }>(`/rigs/${id}/intelligence`)
+            .then((r) => r.score.total)
+            .catch(() => null)
+        : null;
+
+      const result = await api.post<{ snapshot: { setupScore: number } | null }>(
+        `/rigs/${id}/components`,
+        {
+          componentId: selected!.id,
+          quantity,
+          ...(replaces ? { replacesRigComponentId: replaces } : {}),
+        },
+      );
+
+      return { before, after: result.snapshot?.setupScore ?? null };
+    },
+    onSuccess: async ({ before, after }) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['rig', id] }),
         queryClient.invalidateQueries({ queryKey: ['intelligence', id] }),
+        queryClient.invalidateQueries({ queryKey: ['history', id] }),
         queryClient.invalidateQueries({ queryKey: ['rigs'] }),
         queryClient.invalidateQueries({ queryKey: ['feed'] }),
       ]);
+
+      /**
+       * Troca de peça é um acontecimento — mas quem decide se ele vira publicação é o
+       * dono. Nunca publicamos automaticamente: perguntamos, e o padrão é não publicar.
+       */
+      if (isReplacing && before !== null && after !== null) {
+        setOutcome({
+          fromModel: replacesName ?? 'peça anterior',
+          toModel: selected!.model,
+          scoreBefore: before,
+          scoreAfter: after,
+        });
+        setStep('published');
+      } else {
+        router.back();
+      }
+    },
+  });
+
+  const publish = useMutation({
+    mutationFn: () =>
+      api.post('/events', {
+        kind: 'UPGRADE',
+        title: `Troquei ${(categoryLabel[category ?? ''] ?? 'a peça').toLowerCase()}: ${outcome!.fromModel} → ${outcome!.toModel}`,
+        body: null,
+        rigId: id,
+        payload: {
+          from: outcome!.fromModel,
+          to: outcome!.toModel,
+          scoreDelta: outcome!.scoreAfter - outcome!.scoreBefore,
+        },
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['feed'] });
       router.back();
     },
   });
@@ -146,10 +223,11 @@ export default function AddComponent() {
 
   const title = {
     category: 'O que você quer cadastrar?',
-    brand: `Qual a marca?`,
+    brand: isReplacing ? 'Qual a marca da nova peça?' : 'Qual a marca?',
     family: 'Qual a linha?',
     model: 'Qual o modelo exato?',
-    confirm: 'Confirmar',
+    confirm: isReplacing ? 'Confirmar a troca' : 'Confirmar',
+    published: 'Pronto',
   }[step];
 
   return (
@@ -407,7 +485,81 @@ export default function AddComponent() {
             </View>
           </View>
 
-          <Button label="Adicionar ao PC" onPress={() => add.mutate()} loading={add.isPending} />
+          <Button
+            label={isReplacing ? 'Confirmar troca' : 'Adicionar ao PC'}
+            onPress={() => add.mutate()}
+            loading={add.isPending}
+          />
+        </Animated.View>
+      ) : null}
+
+      {/* ---------- Consentimento de publicação ---------- */}
+      {step === 'published' && outcome ? (
+        <Animated.View entering={FadeInRight.duration(240)} style={{ gap: space.xl }}>
+          <Panel style={{ gap: space.lg }}>
+            <Txt variant="label" tone="faint">
+              TROCA REGISTRADA
+            </Txt>
+
+            <View style={{ gap: space.sm }}>
+              <Txt variant="small" tone="faint" numberOfLines={1}>
+                {outcome.fromModel}
+              </Txt>
+              <Txt variant="small" tone="accent">
+                ↓
+              </Txt>
+              <Txt variant="heading" numberOfLines={1}>
+                {outcome.toModel}
+              </Txt>
+            </View>
+
+            <Divider />
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+              <Txt variant="small" tone="faint" style={{ flex: 1 }}>
+                Setup Score
+              </Txt>
+              <Txt variant="small" tone="faint">
+                {outcome.scoreBefore}
+              </Txt>
+              <Txt variant="small" tone="faint">
+                →
+              </Txt>
+              <Txt
+                variant="bodyStrong"
+                style={{
+                  color:
+                    outcome.scoreAfter > outcome.scoreBefore
+                      ? color.good
+                      : outcome.scoreAfter < outcome.scoreBefore
+                        ? color.high
+                        : color.text,
+                }}
+              >
+                {outcome.scoreAfter}
+              </Txt>
+            </View>
+          </Panel>
+
+          {/*
+            Privacidade: nada é publicado sem a pessoa mandar. O botão de não publicar é
+            tão fácil de tocar quanto o de publicar — não escondemos a saída.
+          */}
+          <View style={{ gap: space.md }}>
+            <Txt variant="body" tone="dim">
+              Quer publicar essa troca no seu feed? Só você decide — a máquina já foi
+              atualizada de qualquer forma.
+            </Txt>
+            <Button
+              label="Publicar no feed"
+              onPress={() => {
+                setPublishing(true);
+                publish.mutate();
+              }}
+              loading={publishing && publish.isPending}
+            />
+            <Button label="Não publicar" variant="ghost" onPress={() => router.back()} />
+          </View>
         </Animated.View>
       ) : null}
     </Screen>

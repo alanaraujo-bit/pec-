@@ -316,9 +316,21 @@ export function Pill({
 // Estados
 // ---------------------------------------------------------------------------
 
+/**
+ * `minHeight` além do `flex: 1` porque dentro de um ScrollView o `flex: 1` colapsa para
+ * altura zero — o indicador simplesmente não aparece, e a tela parece travada em branco.
+ */
 export function Loading({ label }: { label?: string }) {
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.lg }}>
+    <View
+      style={{
+        flex: 1,
+        minHeight: 120,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: space.lg,
+      }}
+    >
       <ActivityIndicator color={color.accent} />
       {label ? (
         <Txt variant="small" tone="faint">

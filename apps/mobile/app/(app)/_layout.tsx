@@ -84,6 +84,8 @@ export default function AppLayout() {
           tabBarIcon: ({ focused }) => <TabIcon glyph="◭" focused={focused} />,
         }}
       />
+      <Tabs.Screen name="events" options={{ href: null }} />
+      <Tabs.Screen name="compare" options={{ href: null }} />
       <Tabs.Screen
         name="profile"
         options={{

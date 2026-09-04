@@ -8,9 +8,10 @@
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { HARDWARE_CATEGORIES } from '@pece/core';
+import { compareComponents, DEFAULT_PROFILE, HARDWARE_CATEGORIES } from '@pece/core';
 import { prisma } from '../db.ts';
-import { toCatalogComponent } from '../mappers.ts';
+import { toCatalogComponent, toUsageProfile } from '../mappers.ts';
+import { optionalAuth } from '../auth.ts';
 
 const categorySchema = z.enum(HARDWARE_CATEGORIES);
 
@@ -100,6 +101,42 @@ export async function catalogRoutes(app: FastifyInstance) {
     });
 
     return { results: rows.map(toCatalogComponent) };
+  });
+
+  /**
+   * Comparação entre duas peças.
+   *
+   * Contextual de propósito: o vencedor depende do perfil de quem pergunta. Um 9800X3D
+   * ganha de um 285K para quem joga e perde para quem renderiza — e as duas respostas
+   * estão certas. Sem login, cai no perfil padrão.
+   */
+  app.get('/catalog/compare', { preHandler: optionalAuth }, async (request, reply) => {
+    const { a, b } = request.query as { a?: string; b?: string };
+    if (!a || !b) {
+      return reply.code(400).send({ error: 'validation', message: 'Informe as duas peças.' });
+    }
+
+    const [left, right] = await Promise.all([
+      prisma.component.findUnique({ where: { id: a } }),
+      prisma.component.findUnique({ where: { id: b } }),
+    ]);
+    if (!left || !right) return reply.code(404).send({ error: 'not_found' });
+    if (left.category !== right.category) {
+      return reply
+        .code(400)
+        .send({ error: 'validation', message: 'Só dá para comparar peças do mesmo tipo.' });
+    }
+
+    const profile = request.user
+      ? toUsageProfile(
+          await prisma.profile.findUnique({ where: { userId: request.user.id } }),
+          DEFAULT_PROFILE.region,
+        )
+      : DEFAULT_PROFILE;
+
+    return {
+      comparison: compareComponents(toCatalogComponent(left), toCatalogComponent(right), profile),
+    };
   });
 
   app.get('/catalog/components/:id', async (request, reply) => {

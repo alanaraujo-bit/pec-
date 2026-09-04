@@ -224,7 +224,7 @@ export default function RigDetail() {
             </Animated.View>
           ) : null}
 
-          <View style={{ flexDirection: 'row', gap: space.sm, marginBottom: space.xxl }}>
+          <View style={{ flexDirection: 'row', gap: space.sm, marginBottom: space.sm }}>
             <Button
               label="Ver evolução"
               variant="secondary"
@@ -241,6 +241,14 @@ export default function RigDetail() {
               />
             ) : null}
           </View>
+
+          <Button
+            label="Comparar com outro PC"
+            variant="secondary"
+            size="sm"
+            style={{ marginBottom: space.xxl }}
+            onPress={() => router.push(`/compare?left=${id}`)}
+          />
         </>
       ) : (
         <Animated.View entering={FadeIn.duration(300)} style={{ marginBottom: space.xxl, gap: space.lg }}>
@@ -289,16 +297,36 @@ export default function RigDetail() {
                   </View>
 
                   {isOwner ? (
-                    <Pressable
-                      onPress={() => remove.mutate(item.id)}
-                      hitSlop={10}
-                      accessibilityLabel={`Remover ${item.component.model}`}
-                      style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, padding: 4 })}
-                    >
-                      <Txt variant="small" tone="faint">
-                        ✕
-                      </Txt>
-                    </Pressable>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                      {/* Trocar preserva a peça antiga no histórico; remover não. */}
+                      <Pressable
+                        onPress={() =>
+                          router.push(
+                            `/rigs/${id}/add?replaces=${item.id}` +
+                              `&replacesName=${encodeURIComponent(item.component.model)}` +
+                              `&replacesCategory=${item.component.category}`,
+                          )
+                        }
+                        hitSlop={8}
+                        accessibilityLabel={`Trocar ${item.component.model}`}
+                        style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, padding: 4 })}
+                      >
+                        <Txt variant="small" tone="accent">
+                          trocar
+                        </Txt>
+                      </Pressable>
+
+                      <Pressable
+                        onPress={() => remove.mutate(item.id)}
+                        hitSlop={8}
+                        accessibilityLabel={`Remover ${item.component.model}`}
+                        style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, padding: 4 })}
+                      >
+                        <Txt variant="small" tone="faint">
+                          ✕
+                        </Txt>
+                      </Pressable>
+                    </View>
                   ) : null}
                 </View>
               </View>
