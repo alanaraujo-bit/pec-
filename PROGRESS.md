@@ -1,40 +1,144 @@
-# Pecê — Registro de Progresso
+# Pecê — Estado e Retomada
 
-> Documento vivo. Atualizado a cada etapa concluída para permitir retomada da sessão.
+> Documento vivo. Quem pegar o projeto daqui — pessoa ou IA — deve conseguir continuar
+> sem reler o histórico da conversa. Atualize ao concluir cada etapa.
 
-## Stack decidida
+**Última atualização:** 04/09/2026
+**Repositório:** https://github.com/alanaraujo-bit/pec-
+**API em produção:** https://api-production-eb453.up.railway.app
+
+---
+
+## 1. Stack e por quê
 
 | Camada | Escolha | Motivo |
 |---|---|---|
-| Mobile | Expo SDK 57 / React Native 0.86 / expo-router | Android + iOS nativos reais, não PWA |
-| Animação | Reanimated 4 + Gesture Handler | Gesto press-and-hold das reações precisa rodar na UI thread |
-| Backend | Fastify + TypeScript + Prisma | Performance, tipagem ponta a ponta |
-| Banco | PostgreSQL no Railway | Persistência real de produção desde o início |
-| Domínio | `packages/core` (TS puro) | Engine determinística compartilhada entre API e app |
+| Mobile | Expo SDK 57 / RN 0.86 / expo-router | Android e iOS nativos reais, não PWA |
+| Animação | Reanimated 4 + Gesture Handler | O gesto de reação roda na thread de UI |
+| Backend | Fastify + TypeScript + Prisma | Performance e tipagem ponta a ponta |
+| Banco | PostgreSQL no Railway | Persistência real desde o primeiro dia |
+| Domínio | `packages/core` (TS puro) | Engine determinística, compartilhável |
 
-## Decisões de arquitetura
+**Vercel foi descartado.** O produto é React Native + API no Railway; espalhar por duas
+plataformas não agregaria nada.
 
-- **Monorepo npm workspaces** — `apps/mobile`, `apps/api`, `packages/core`.
-- **Vercel descartado.** O produto é RN + API Railway; espalhar por duas plataformas não agrega.
-- **Engine de inteligência é determinística, não generativa.** Regras, índices de performance e
-  compatibilidade vivem em `packages/core`. IA fica reservada para camada de explicação futura.
-- **Catálogo de hardware é estruturado.** O usuário nunca digita o nome do componente livremente;
-  seleciona a partir da base. Isso é pré-requisito para score, valuation e comparação.
+**IA generativa não está no núcleo.** Regras, índices e compatibilidade são determinísticos.
+IA fica reservada para uma futura camada de explicação — a verdade técnica não pode depender
+de resposta generativa.
 
-## Validações feitas
+---
 
-- [x] Caminho não-ASCII (`D:\PROJETOS\PECÊ`) — Metro empacota normalmente. Sem necessidade de junction.
-- [x] Android SDK completo em `C:\Android\sdk` com emulador e AVDs (`Orla_API34`) — verificação visual real é possível.
-- [x] Railway autenticado (alanvitoraraujo2a@gmail.com).
+## 2. Infraestrutura provisionada
 
-## Status
-
-| Etapa | Status |
+| Recurso | Identificador |
 |---|---|
-| Monorepo + scaffold Expo | ✅ |
-| Bundle Metro validado | ✅ |
-| Railway: projeto + Postgres | 🔄 |
-| `packages/core` (engine) | ⏳ |
-| API Fastify + Prisma | ⏳ |
-| Catálogo de hardware (seed) | ⏳ |
-| App mobile | ⏳ |
+| Projeto Railway | `pece` — `01208a56-40f9-4208-9969-d12897eb6cbd` |
+| Ambiente | `production` — `82727ddf-776d-4196-a78d-eddfc48d59da` |
+| Serviço Postgres | `dc3039aa-4411-4372-935d-f790cee786cf` |
+| Serviço API | `418e0869-deef-496a-a179-04f2e5e61f01` |
+| Proxy público do banco | `altaria.proxy.rlwy.net:43103` |
+| Domínio da API | `api-production-eb453.up.railway.app` |
+
+Credenciais ficam no Railway e em `apps/api/.env` (fora do Git). Modelo em `.env.example`.
+
+**Deploy:** `railway up --detach --service api`
+**Migração e seed são manuais de propósito** — o container não roda `db push` no boot, porque
+o Railway reinicia containers sozinho e `--accept-data-loss` a cada reinício arriscaria dados
+de produção.
+
+---
+
+## 3. O que está pronto
+
+### `packages/core` — domínio (35 testes ✅)
+
+- **Modelo de FPS** calibrado contra pares CPU/GPU reais, com pontos de calibração travados
+  por teste. Trata gargalo de CPU e de GPU de forma assimétrica (ver seção 6).
+- **Diagnóstico** com achados ordenados por severidade e impacto, cada um com
+  o quê / por quê / como / camada técnica.
+- **Setup Score** em 5 dimensões explicadas: desempenho, equilíbrio, adequação, saúde, eficiência.
+- **Cenários de upgrade** (econômico / equilibrado / entusiasta) com peças reais, já filtradas
+  por compatibilidade e por ganho mínimo de 8%.
+- **Valuation** regional com curva de depreciação, sempre em faixa — nunca número exato.
+- **Comparação** contextual: o vencedor depende do perfil de quem pergunta.
+- **Catálogo:** 167 componentes com specs reais (35 CPUs, 35 GPUs, placas, memória,
+  armazenamento, fontes, coolers, gabinetes, monitores, periféricos).
+
+### `apps/api` — Fastify + Prisma (70 verificações ponta a ponta ✅)
+
+Auth, catálogo guiado em 3 níveis, máquinas, inteligência, valor, histórico/evolução, feed,
+eventos, reações, comentários, perfil, rankings e comparação.
+
+### `apps/mobile` — Expo (15 telas, sem erro de console ✅)
+
+Boas-vindas, login, cadastro, onboarding em 4 passos, Home com feed, Meus PCs, detalhe da
+máquina, diagnóstico, cadastro guiado de peça, evolução, rankings, perfil próprio e de
+terceiros, detalhe de evento com comentários, e comparação.
+
+---
+
+## 4. Como verificar que está tudo de pé
+
+```bash
+# Domínio
+cd packages/core && node --test src/engine/performance.test.ts src/engine/diagnosis.test.ts
+
+# Gesto de reação
+cd apps/mobile && node --test src/components/reactionGesture.test.ts
+
+# API de produção, ponta a ponta
+cd apps/api && API_URL=https://api-production-eb453.up.railway.app node scripts/smoke.mjs
+
+# Visual (Metro precisa estar rodando com --web)
+cd apps/mobile && npx expo start --web    # terminal 1
+cd apps/mobile && node scripts/verify.mjs # terminal 2
+```
+
+---
+
+## 5. Próximos passos, em ordem de valor
+
+1. **Marketplace** — o schema e a valuation já suportam. Falta o anúncio a partir de uma peça
+   do setup (`suggestSellingPrice` já devolve a faixa recomendada) e a listagem.
+2. **PC Health como eixo próprio** — hoje temperatura/manutenção estão dentro do diagnóstico.
+   A especificação pede Performance ≠ Health ≠ Intelligence separados.
+3. **Notificações** — mudança relevante de preço, oportunidade de upgrade, atividade social.
+4. **Preços reais de mercado** — hoje a valuation parte do MSRP com depreciação modelada.
+   Ingestão de preço real (novo e usado) tornaria a estimativa muito mais precisa.
+5. **Expandir o catálogo** — 167 peças cobrem o comum no Brasil. A ingestão é aditiva:
+   acrescentar uma peça é acrescentar uma linha, sem tocar no engine.
+6. **PC Companion (Windows)** — a arquitetura já está preparada; o domínio não depende do servidor.
+7. **Fechar iOS e APK** — depende de credenciais suas, ver BLOCKERS.md.
+
+---
+
+## 6. Armadilhas — leia antes de mexer no engine
+
+**Não simetrize o gargalo.** Limitado por GPU é o estado normal e desejável de um PC de jogo.
+Limitado por CPU é desempenho comprado e parado. `wastedPotential()` implementa essa
+assimetria e alimenta tanto o diagnóstico quanto o score, para os dois nunca se contradizerem.
+Tratar igual faria o produto acusar de "desequilibrado" um 7800X3D com uma 4070 Super.
+
+**Não transforme o score em ranking de preço.** Só uma das cinco dimensões olha desempenho
+bruto, e ela é comprimida por raiz de propósito. O teste `PC mais barato e equilibrado vence
+PC caro e desequilibrado` guarda essa promessa.
+
+**Não gere cenário quando o veredito é `healthy`.** Lista vazia é a resposta certa.
+
+**Não deixe o app recalcular domínio.** A API devolve tudo pronto pelo core. Já corrigi um
+caso em que o perfil deduzia o veredito pelo score — a tela passou a discordar do engine.
+
+**`Loading` dentro de ScrollView precisa de `minHeight`.** `flex: 1` colapsa para altura zero
+e a tela parece travada em branco. Já corrigido no componente compartilhado.
+
+**Git Bash converte argumento começando com `/`** em caminho do Windows antes de chegar ao
+Node. `scripts/shot.mjs` normaliza isso; o erro que aparecia ("Cannot navigate to invalid URL")
+não tinha relação com a causa.
+
+---
+
+## 7. Validações de ambiente já feitas
+
+- Caminho não-ASCII (`D:\PROJETOS\PECÊ`) — o Metro empacota normalmente, sem junction.
+- Android SDK completo em `C:\Android\sdk` com AVDs, mas **o emulador não sobe** (BLOCKERS.md).
+- Railway autenticado; Vercel autenticado, porém não utilizado.
