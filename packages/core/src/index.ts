@@ -22,3 +22,4 @@ export * from './score/setupScore.ts';
 export * from './value/valuation.ts';
 export * from './compare/compare.ts';
 export * from './market/listing.ts';
+export * from './health/health.ts';

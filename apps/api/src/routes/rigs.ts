@@ -9,6 +9,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
+  assessHealth,
   buildScenarios,
   compareRigs,
   computeSetupScore,
@@ -316,6 +317,22 @@ export async function rigRoutes(app: FastifyInstance) {
         : [];
 
     return { diagnosis, score, scenarios, profile: ctx.profile };
+  });
+
+  /**
+   * PC Health — eixo próprio, rota própria.
+   *
+   * Separada de /intelligence de propósito: são perguntas diferentes, e juntá-las numa
+   * resposta só faria a tela ter de escolher qual metade mostrar. Saúde também não
+   * depende do perfil de uso — uma fonte velha é o mesmo risco para qualquer pessoa.
+   */
+  app.get('/rigs/:id/health', { preHandler: optionalAuth }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const ctx = await loadRigContext(id);
+    if (!ctx) return reply.code(404).send({ error: 'not_found' });
+    if (!(await canView(ctx.row, request.user?.id))) return reply.code(403).send({ error: 'forbidden' });
+
+    return { health: assessHealth(ctx.rig) };
   });
 
   app.get('/rigs/:id/value', { preHandler: optionalAuth }, async (request, reply) => {

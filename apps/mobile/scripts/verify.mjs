@@ -82,18 +82,27 @@ async function seed() {
   const rig = await apiCall('POST', '/rigs', { token, body: { name: 'PC Principal' } });
   const rigId = rig.rig.id;
 
-  // Processador de 2020 segurando uma placa de topo, com um pente só de memória.
-  for (const componentId of [
-    'cpu-i5-10400f',
-    'gpu-rtx-4080-super',
-    'mb-msi-b560m-pro',
-    'sto-kingston-nv2-1tb',
-    'psu-corsair-rm850x',
-    'cool-cm-hyper212',
-    'case-corsair-4000d-airflow',
-    'mon-aoc-24g2',
+  /**
+   * Processador de 2020 segurando uma placa de topo, com um pente só de memória.
+   *
+   * As datas de compra existem para a tela de Saúde ter o que dizer: sem elas o engine
+   * se recusa a afirmar desgaste, e a captura mostraria só a lacuna declarada. Uma base
+   * montada em 2020 com uma GPU nova em 2024 é também o cenário mais comum de verdade.
+   */
+  const BASE_2020 = new Date(Date.now() - 6 * 365.25 * 24 * 3600 * 1000).toISOString();
+  const RECENTE = new Date(Date.now() - 300 * 24 * 3600 * 1000).toISOString();
+
+  for (const [componentId, acquiredAt] of [
+    ['cpu-i5-10400f', BASE_2020],
+    ['gpu-rtx-4080-super', RECENTE],
+    ['mb-msi-b560m-pro', BASE_2020],
+    ['sto-kingston-nv2-1tb', BASE_2020],
+    ['psu-corsair-rm850x', BASE_2020],
+    ['cool-cm-hyper212', BASE_2020],
+    ['case-corsair-4000d-airflow', BASE_2020],
+    ['mon-aoc-24g2', BASE_2020],
   ]) {
-    await apiCall('POST', `/rigs/${rigId}/components`, { token, body: { componentId } });
+    await apiCall('POST', `/rigs/${rigId}/components`, { token, body: { componentId, acquiredAt } });
   }
   await apiCall('POST', `/rigs/${rigId}/components`, {
     token,
@@ -249,6 +258,7 @@ async function main() {
     { name: '05-intelligence', route: `/rigs/${ctx.rigId}/intelligence`, full: true },
     { name: '06-add-component', route: `/rigs/${ctx.rigId}/add`, full: true },
     { name: '07-history', route: `/rigs/${ctx.rigId}/history`, full: true },
+    { name: '07b-health', route: `/rigs/${ctx.rigId}/health`, full: true },
     { name: '08-rankings', route: '/rankings' },
     { name: '09-profile', route: '/profile', full: true },
     { name: '10-other-profile', route: `/profile?handle=${ctx.otherHandle}`, full: true },

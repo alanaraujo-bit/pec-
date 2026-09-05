@@ -51,7 +51,7 @@ proxy público **e depois** o deploy. A tabela `Listing` já foi ao banco de pro
 
 ## 3. O que está pronto
 
-### `packages/core` — domínio (41 testes ✅)
+### `packages/core` — domínio (52 testes ✅)
 
 - **Modelo de FPS** calibrado contra pares CPU/GPU reais, com pontos de calibração travados
   por teste. Trata gargalo de CPU e de GPU de forma assimétrica (ver seção 6).
@@ -65,24 +65,29 @@ proxy público **e depois** o deploy. A tabela `Listing` já foi ao banco de pro
 - **Marketplace** (`market/listing.ts`): rascunho de anúncio a partir de uma peça do PC,
   leitura do preço pedido em quatro faixas explicadas e ciclo de vida do anúncio. Sem preço
   de referência no catálogo, devolve `null` em vez de inventar valor.
+- **PC Health** (`health/health.ts`): eixo próprio, com nota, status e checks de
+  refrigeração, energia, montagem, desgaste e manutenção. Todo check declara se resolver
+  **custa dinheiro** — e a tela mostra primeiro o que não custa. Desgaste só é afirmado
+  quando existe data de compra declarada; sem ela, vira lacuna declarada, não acusação.
 - **Catálogo:** 167 componentes com specs reais (35 CPUs, 35 GPUs, placas, memória,
   armazenamento, fontes, coolers, gabinetes, monitores, periféricos).
 
-### `apps/api` — Fastify + Prisma (104 verificações ponta a ponta ✅)
+### `apps/api` — Fastify + Prisma (118 verificações ponta a ponta ✅)
 
 Auth, catálogo guiado em 3 níveis, máquinas, inteligência, valor, histórico/evolução, feed,
-eventos, reações, comentários, perfil, rankings, comparação e marketplace.
+eventos, reações, comentários, perfil, rankings, comparação, marketplace, saúde do PC e
+remoção de conta.
 
 `recordSnapshot` e `loadRigContext` moram em `src/snapshots.ts`, não dentro de uma rota: hoje
 quatro caminhos diferentes mudam a máquina (adicionar, trocar, remover e vender peça), e se
 cada um gravasse seu próprio retrato, um deles acabaria gravando diferente.
 
-### `apps/mobile` — Expo (18 telas, sem erro de console ✅)
+### `apps/mobile` — Expo (19 telas, sem erro de console ✅)
 
 Boas-vindas, login, cadastro, onboarding em 4 passos, Home com feed, Meus PCs, detalhe da
 máquina, diagnóstico, cadastro guiado de peça, evolução, rankings, perfil próprio e de
-terceiros, detalhe de evento com comentários, comparação, mercado, detalhe de anúncio e
-anúncio de peça.
+terceiros, detalhe de evento com comentários, comparação, saúde do PC, mercado, detalhe de
+anúncio e anúncio de peça.
 
 ---
 
@@ -108,8 +113,9 @@ cd apps/mobile && node scripts/verify.mjs # terminal 2
 
 ## 5. Próximos passos, em ordem de valor
 
-1. **PC Health como eixo próprio** — hoje temperatura/manutenção estão dentro do diagnóstico.
-   A especificação pede Performance ≠ Health ≠ Intelligence separados.
+1. **Registro de manutenção** — o eixo de saúde existe, mas deduz manutenção pelo tempo de
+   instalação. Um modelo `Maintenance` (rigId, tipo, data, notas) tornaria a dedução um fato,
+   e `EventKind.MAINTENANCE` já existe esperando por ele.
 2. **Notificações** — mudança relevante de preço, oportunidade de upgrade, atividade social.
 3. **Preços reais de mercado** — hoje a valuation parte do MSRP com depreciação modelada.
    Ingestão de preço real (novo e usado) tornaria a estimativa muito mais precisa.
@@ -147,6 +153,36 @@ do PC: se a monetização começar a mexer na verdade técnica, ele quebra prime
 
 **Anúncio nunca publica sozinho.** `publishEvent` chega `false` por padrão nas rotas de criar
 e de vender. Vender marca `removedAt` na peça, como a troca — nunca DELETE.
+
+**Health é o que se resolve sem comprar nada.** É o que dá identidade ao eixo e o que o
+impede de virar uma segunda lista de compras. Todo `HealthCheck` carrega `costsMoney`, a
+ordenação desempata a favor do que é grátis e a tela separa "dá para resolver sem gastar"
+de "exige troca de peça". `health.test.ts` trava que um problema de saúde com conserto
+grátis não gera cenário de compra.
+
+**Health não reimplementa térmica, energia nem compatibilidade.** Ele consome
+`analyzeThermals`, `analyzePower` e `analyzeCompatibility` — os mesmos do diagnóstico. Um
+teste percorre os achados dos dois eixos e exige texto idêntico para o mesmo `id`. Reescrever
+essa análise dentro do `health.ts` é exatamente como a aba Saúde passaria a discordar do
+diagnóstico sobre a mesma máquina.
+
+**Idade em Health ≠ idade na valuation.** Lá o ano de lançamento é piso da idade: um modelo
+de 2018 vale menos hoje, tenha sido comprado quando for. Desgaste conta tempo *ligado*, e
+uma fonte modelo 2018 comprada lacrada em 2025 não tem oito anos de uso. `serviceYears()`
+devolve `null` sem `acquiredAt`, e a lacuna é declarada em vez de chutada — copiar a regra
+da valuation aqui faria o produto mandar trocar a fonte de quem acabou de comprá-la.
+
+**A dimensão `health` do Setup Score vem de `assessHealth`, não de filtrar achados.** Ao
+unificar, achados de armazenamento saíram da saúde (— "instale um SSD" é desempenho, e já
+pesava em `power` e `balance`; descontar de novo era punir duas vezes) e desgaste entrou.
+Efeito medido: PC equilibrado e PC barato inalterados; PC caro e desequilibrado foi de 59
+para 61, e a margem do teste `PC mais barato... vence...` foi de 22 para 20 pontos.
+
+**O Setup Score passou a depender do tempo.** Consequência direta do item acima: com
+desgaste dentro da dimensão de saúde, a nota de uma máquina parada cai devagar conforme as
+peças envelhecem. Isso é o comportamento certo — hardware envelhece mesmo — e é o que o PC
+Evolution quer registrar. Mas significa que dois retratos da mesma máquina sem nenhuma troca
+podem ter notas diferentes, e que teste de score precisa fixar `now` para não apodrecer.
 
 **`Loading` dentro de ScrollView precisa de `minHeight`.** `flex: 1` colapsa para altura zero
 e a tela parece travada em branco. Já corrigido no componente compartilhado.

@@ -349,3 +349,35 @@ export interface RigDetailResponse {
   };
   isOwner: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// PC Health
+// ---------------------------------------------------------------------------
+
+export type HealthStatus = 'good' | 'watch' | 'at-risk' | 'critical';
+
+export interface HealthCheck {
+  id: string;
+  area: 'thermal' | 'power' | 'wear' | 'storage' | 'compatibility' | 'maintenance';
+  status: HealthStatus;
+  what: string;
+  why: string;
+  how: string | null;
+  technical: string[];
+  /** Se resolver exige comprar algo. A tela mostra primeiro o que não exige. */
+  costsMoney: boolean;
+  ageYears: number | null;
+}
+
+export interface HealthResponse {
+  health: {
+    status: HealthStatus;
+    score: number;
+    headline: string;
+    summary: string;
+    checks: HealthCheck[];
+    passing: Array<{ area: string; label: string; reason: string }>;
+    freeActions: string[];
+    limitations: string[];
+  };
+}

@@ -224,6 +224,27 @@ export default function RigDetail() {
             </Animated.View>
           ) : null}
 
+          {/*
+            Saúde fica ao lado do diagnóstico, não dentro dele: são perguntas diferentes.
+            "Meu PC é rápido o bastante?" e "meu PC está bem cuidado?" têm respostas que
+            não se deduzem uma da outra — um PC modesto pode ter saúde perfeita.
+          */}
+          <Animated.View entering={FadeInDown.delay(180).duration(320)} style={{ marginBottom: space.xl }}>
+            <Panel onPress={() => router.push(`/rigs/${id}/health`)} style={{ gap: space.sm }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                <Txt variant="label" tone="faint" style={{ flex: 1 }}>
+                  SAÚDE DO PC
+                </Txt>
+                <Txt variant="smallStrong" tone="accent">
+                  Ver
+                </Txt>
+              </View>
+              <Txt variant="small" tone="dim">
+                Refrigeração, energia, desgaste e manutenção — o que se resolve sem comprar peça.
+              </Txt>
+            </Panel>
+          </Animated.View>
+
           <View style={{ flexDirection: 'row', gap: space.sm, marginBottom: space.sm }}>
             <Button
               label="Ver evolução"

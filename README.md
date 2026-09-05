@@ -25,7 +25,7 @@ desequilibrado` existe justamente para impedir que o produto vire um ranking de 
 ```
 packages/core     Domínio puro em TypeScript. Sem banco, sem HTTP, sem React.
                   Modelo de FPS, diagnóstico, Setup Score, valuation, comparação,
-                  compatibilidade, marketplace e o catálogo de hardware.
+                  compatibilidade, saúde, marketplace e o catálogo de hardware.
 
 apps/api          Fastify + Prisma + PostgreSQL (Railway).
                   Consome o core; nenhuma regra de domínio vive aqui.
@@ -48,10 +48,11 @@ livre não diz se é 8GB ou Ti, e sem isso não existe gargalo, score nem valor 
 
 | Área | Situação |
 |---|---|
-| Engine de domínio | ✅ 41 testes passando |
-| API em produção | ✅ 104 verificações ponta a ponta contra o Postgres real |
-| App mobile | ✅ 18 telas, sem erro de console |
+| Engine de domínio | ✅ 52 testes passando |
+| API em produção | ✅ 118 verificações ponta a ponta contra o Postgres real |
+| App mobile | ✅ 19 telas, sem erro de console |
 | Marketplace | ✅ Anúncio a partir da peça do PC, com a faixa do engine |
+| PC Health | ✅ Eixo próprio — o que se resolve sem comprar peça vem primeiro |
 | Deploy | ✅ https://api-production-eb453.up.railway.app |
 | Emulador Android | ⛔ Bloqueado — ver [BLOCKERS.md](BLOCKERS.md) |
 | iOS | ⛔ Exige macOS ou EAS Build — ver [BLOCKERS.md](BLOCKERS.md) |

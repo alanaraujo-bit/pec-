@@ -21,6 +21,7 @@ import { gamingShare } from '../profile/types.ts';
 import { diagnose, type Diagnosis } from '../engine/diagnosis.ts';
 import { wastedPotential } from '../engine/performance.ts';
 import { computePowerBudget } from '../engine/subsystems.ts';
+import { assessHealth } from '../health/health.ts';
 
 export type ScoreDimension = 'power' | 'balance' | 'fitness' | 'health' | 'efficiency';
 
@@ -187,25 +188,35 @@ function scoreFitness(diagnosis: Diagnosis, profile: UsageProfile): DimensionSco
   };
 }
 
-/** Saúde: fonte, térmica, armazenamento e compatibilidade. */
-function scoreHealth(diagnosis: Diagnosis): DimensionScore {
-  const penalty: Record<string, number> = { critical: 45, high: 22, medium: 10, low: 3, none: 0 };
-  const relevant = diagnosis.findings.filter((f) =>
-    ['power', 'thermal', 'compatibility', 'storage'].includes(f.kind),
-  );
-  const score = clamp(100 - relevant.reduce((sum, f) => sum + (penalty[f.severity] ?? 0), 0));
+/**
+ * Saúde: delega ao eixo de PC Health, em vez de reimplementar o julgamento.
+ *
+ * Antes esta função filtrava achados do diagnóstico por `kind` e aplicava uma tabela de
+ * penalidades própria. Com `assessHealth` existindo, isso passaria a ser um segundo
+ * julgamento sobre o mesmo fato: a aba Saúde poderia dizer "em ordem" enquanto a dimensão
+ * do score descontasse pontos, e ninguém saberia qual das duas acreditar.
+ *
+ * Duas mudanças de comportamento vieram junto, e as duas são correções:
+ *
+ * - **Armazenamento saiu.** "Instale um SSD" é recomendação de desempenho, não de saúde;
+ *   ela já pesa em `power` e em `fitness`, e descontar de novo aqui punia duas vezes.
+ * - **Desgaste e manutenção entraram.** Uma fonte de nove anos passa a custar pontos,
+ *   como deve — só que apenas quando existe data de compra declarada para sustentar isso.
+ */
+function scoreHealth(rig: Rig): DimensionScore {
+  const report = assessHealth(rig);
 
   return {
     dimension: 'health',
-    score: Math.round(score),
+    score: report.score,
     weight: WEIGHTS.health,
     label: LABEL.health,
     reason:
-      score > 90
-        ? 'Fonte, refrigeração e armazenamento em ordem.'
-        : score > 65
+      report.score > 90
+        ? 'Fonte, refrigeração e montagem em ordem.'
+        : report.score > 65
           ? 'Um ponto de atenção na saúde do conjunto.'
-          : 'Há questões de fonte ou refrigeração para resolver.',
+          : 'Há questões de fonte, refrigeração ou desgaste para resolver.',
   };
 }
 
@@ -254,7 +265,7 @@ export function computeSetupScore(rig: Rig, profile: UsageProfile, diagnosis?: D
     scorePower(rig),
     scoreBalance(diag),
     scoreFitness(diag, profile),
-    scoreHealth(diag),
+    scoreHealth(rig),
     scoreEfficiency(rig),
   ];
 

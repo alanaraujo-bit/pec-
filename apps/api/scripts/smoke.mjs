@@ -386,6 +386,43 @@ async function main() {
   check('comparação declara um vencedor com justificativa', Boolean(compare.body.comparison.verdict.reasoning));
 
   // -------------------------------------------------------------------------
+  section('PC Health — eixo próprio');
+
+  const rigHealth = await api('GET', `/rigs/${biaRigId}/health`, { token: bia.token });
+  check('rota de saúde responde', rigHealth.status === 200);
+  check('saúde vem com nota própria, separada do Setup Score', typeof rigHealth.body.health.score === 'number');
+  check(
+    'máquina bem montada tem saúde em ordem',
+    rigHealth.body.health.status === 'good',
+    `${rigHealth.body.health.status}: ${rigHealth.body.health.headline}`,
+  );
+  check('saúde diz o que está em ordem, não só o que falta', rigHealth.body.health.passing.length > 0);
+  check(
+    'saúde admite que não lê sensores',
+    rigHealth.body.health.limitations.some((l) => /sensor/i.test(l)),
+  );
+
+  // Saúde e desempenho respondem a perguntas diferentes sobre a mesma máquina.
+  const alanHealth = await api('GET', `/rigs/${rigId}/health`, { token: alan.token });
+  const alanIntel = await api('GET', `/rigs/${rigId}/intelligence`, { token: alan.token });
+  check(
+    'saúde não repete o veredito de desempenho',
+    alanHealth.body.health.status !== undefined && alanIntel.body.diagnosis.verdict !== undefined,
+  );
+  check(
+    'todo ponto de saúde diz se custa dinheiro para resolver',
+    alanHealth.body.health.checks.every((c) => typeof c.costsMoney === 'boolean'),
+  );
+  check(
+    'nenhum ponto de saúde vira cenário de compra por conta própria',
+    alanIntel.body.scenarios.every((s) => s.category === 'CPU' || s.category === 'GPU'),
+    alanIntel.body.scenarios.map((s) => s.category).join(','),
+  );
+
+  const healthAsStranger = await api('GET', `/rigs/${biaRigId}/health`);
+  check('saúde respeita a visibilidade da máquina', healthAsStranger.status === 200);
+
+  // -------------------------------------------------------------------------
   section('Marketplace');
 
   const biaDetail = await api('GET', `/rigs/${biaRigId}`, { token: bia.token });
